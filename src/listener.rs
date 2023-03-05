@@ -195,36 +195,6 @@ impl FcmPushListener {
                 },
                 _ => {}
             }
-
-            // if tag == DATA_MESSAGE_STANZA_TAG {
-            //     let data_message = mcs::DataMessageStanza::decode(&payload_buffer[..])?;
-
-            //     let mut persistent_id_2: Option<String> = None;
-            //     if let Some(ref persistent_id) = data_message.persistent_id {
-            //         persistent_id_2 = Some(String::from(persistent_id));
-            //     }
-
-            //     let decrypt_result = self.decrypt_message(data_message)?;
-
-            //     let message = FcmMessage { payload_json: decrypt_result, persistent_id: persistent_id_2 };
-            //     message_callback(message);
-            // }
-
-            // // The push-reciever NPM package doesn't acknowledge heartbeats. It seems to work but it seems more correct to ack the
-            // // heartbeats in case code is added to try and kill dead connections.
-            // if tag == HEARTBEAT_PING_TAG {
-            //     println!("Got a HeartbeatPing, sending HeartbeatAck");
-
-            //     stream.write_u8(HEARTBEAT_ACK_TAG).await?;
-
-            //     let heartbeat_ack = mcs::HeartbeatAck::default();
-            //     let heartbeat_ack_bytes = heartbeat_ack.encode_length_delimited_to_vec();
-            //     stream.write_all(&heartbeat_ack_bytes).await?;
-            // }
-
-            // if tag == LOGIN_RESPONSE_TAG {
-            //     self.received_persistent_ids.clear();
-            // }
         }
 
         Ok(())

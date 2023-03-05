@@ -42,7 +42,7 @@ pub async fn check_in(android_id: Option<i64>, security_token: Option<u64>) -> R
     let client = reqwest::Client::new();
     let result = client.post(url)
         .body(buf)
-        .header("Content-Type", "application/x-protobuf")
+        .header(reqwest::header::CONTENT_TYPE, "application/x-protobuf")
         .send()
         .await?;
 
