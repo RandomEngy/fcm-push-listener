@@ -42,10 +42,9 @@ const LOGIN_RESPONSE_TAG: u8 = 3;
 const CLOSE_TAG: u8 = 4;
 const DATA_MESSAGE_STANZA_TAG: u8 = 8;
 
-pub struct FcmPushListener<F>
-    where F: Fn(FcmMessage) + Send + Copy + 'static {
+pub struct FcmPushListener {
     registration: Registration,
-    message_callback: F,
+    message_callback: fn(FcmMessage),
     received_persistent_ids: Vec<String>,
     task: Option<JoinHandle<Result<(), Error>>>,
 }
@@ -55,12 +54,11 @@ pub struct FcmMessage {
     pub persistent_id: Option<String>,
 }
 
-impl<F> FcmPushListener<F>
-    where F: Fn(FcmMessage) + Send + Copy + 'static {
+impl FcmPushListener {
     pub fn create(
         registration: Registration,
-        message_callback: F,
-        received_persistent_ids: Vec<String>) -> FcmPushListener<F> {
+        message_callback: fn(FcmMessage),
+        received_persistent_ids: Vec<String>) -> FcmPushListener {
         FcmPushListener {
             registration,
             message_callback,
@@ -102,16 +100,14 @@ impl<F> FcmPushListener<F>
 }
 
 /// The worker task state/logic.
-struct PushListenerWorker<F>
-    where F: Fn(FcmMessage) + Send + Copy + 'static {
+struct PushListenerWorker {
     registration: Registration,
     received_persistent_ids: Vec<String>,
-    message_callback: F,
+    message_callback: fn(FcmMessage),
 }
 
-impl<F> PushListenerWorker<F>
-    where F: Fn(FcmMessage) + Send + Copy + 'static{
-    pub fn new(registration: Registration, received_persistent_ids: Vec<String>, message_callback: F) -> PushListenerWorker<F> {
+impl PushListenerWorker {
+    pub fn new(registration: Registration, received_persistent_ids: Vec<String>, message_callback: fn(FcmMessage)) -> PushListenerWorker {
         PushListenerWorker {
             registration,
             received_persistent_ids,
