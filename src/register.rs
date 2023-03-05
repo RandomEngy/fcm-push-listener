@@ -1,3 +1,5 @@
+use serde::Deserialize;
+use serde::Serialize;
 use uuid::Uuid;
 
 use crate::Error;
@@ -5,11 +7,13 @@ use crate::fcm::WebPushKeys;
 use crate::gcm;
 use crate::fcm;
 
+#[derive(Clone, Serialize, Deserialize)]
 pub struct GcmRegistration {
     pub android_id: i64,
     pub security_token: u64,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
 pub struct Registration {
     pub gcm: GcmRegistration,
     pub fcm_token: String,

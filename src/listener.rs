@@ -2,6 +2,7 @@ use std::{sync::Arc, str};
 use ece::EcKeyComponents;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
+use tokio::task::JoinHandle;
 use tokio_rustls::{rustls, TlsConnector, client::TlsStream};
 use prost::Message;
 use base64::{Engine as _, engine::general_purpose::{URL_SAFE_NO_PAD, URL_SAFE}};
@@ -43,7 +44,11 @@ const DATA_MESSAGE_STANZA_TAG: u8 = 8;
 
 pub struct FcmPushListener {
     registration: Registration,
-    message_callback: Box<dyn Fn(FcmMessage)>,
+    received_persistent_ids: Vec<String>,
+    task: Option<JoinHandle<Result<(), Error>>>,
+}
+
+struct MutableFcmState {
     received_persistent_ids: Vec<String>,
 }
 
@@ -53,203 +58,217 @@ pub struct FcmMessage {
 }
 
 impl FcmPushListener {
-    pub fn create<F: Fn(FcmMessage) + 'static>(
+    pub fn create(
         registration: Registration,
-        message_callback: F,
         received_persistent_ids: Vec<String>) -> FcmPushListener {
         FcmPushListener {
             registration,
-            message_callback: Box::new(message_callback),
             received_persistent_ids,
+            task: None,
         }
     }
 
-    pub async fn connect(&mut self) -> Result<(), Error> {
-        loop {
-            let start = Instant::now();
-            let result = self.connect_internal().await;
-            let elapsed = start.elapsed();
+    pub fn connect<F>(&mut self, message_callback: F)
+        where F: Fn(FcmMessage) + Send + Copy + 'static {
+        let registration = self.registration.clone();
+        let mut mutable_state = MutableFcmState { received_persistent_ids: self.received_persistent_ids.clone() };
 
-            // If we quickly disconnected, propagate the error
-            if elapsed.as_secs() < 20 {
-                return result;
-            }
-
-            // Otherwise, try to connect again.
-            println!("Connection failed. Re-connecting.");
-        }
-    }
-
-    async fn connect_internal(&mut self) -> Result<(), Error> {
-        let mut root_store = rustls::RootCertStore::empty();
-        root_store.add_server_trust_anchors(
-            webpki_roots::TLS_SERVER_ROOTS
-                .0
-                .iter()
-                .map(|ta| {
-                    rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
-                        ta.subject,
-                        ta.spki,
-                        ta.name_constraints,
-                    )
-                })
-        );
-
-        let config = rustls::ClientConfig::builder()
-            .with_safe_defaults()
-            .with_root_certificates(root_store)
-            .with_no_client_auth();
-
-        let connector = TlsConnector::from(Arc::new(config));
-        let server_name = "mtalk.google.com".try_into().expect("Google talk server name should resolve");
-
-        let stream = TcpStream::connect("mtalk.google.com:5228").await?;
-        let mut stream = connector.connect(server_name, stream).await?;
-
-        let login_request = self.create_login_request();
-
-        let initial_bytes: Vec<u8> = vec![MCS_VERSION, LOGIN_REQUEST_TAG];
-        stream.write_all(&initial_bytes).await?;
-
-        // Login bytes are preceded by a varint indicating their length
-        let login_request_bytes = login_request.encode_length_delimited_to_vec();
-        stream.write_all(&login_request_bytes).await?;
-
-        // Buffer the reads to reduce sys calls
-        let mut buffered_reader = BufReader::new(stream);
-
-        // Read the version
-        buffered_reader.read_i8().await?;
-
-        // Read messages
-        self.read_message_loop(buffered_reader).await?;
-
-        Ok(())
-    }
-
-    async fn read_message_loop(&mut self, mut stream: BufReader<TlsStream<TcpStream>>) -> Result<(), Error> {
-        loop {
-            let tag: u8 = stream.read_u8().await?;
-            println!("Got message with tag: {}", tag);
-
-            if tag == CLOSE_TAG {
-                break;
-            }
-
-            // The tag is followed by a varint that indicates the message size
-            // See https://protobuf.dev/programming-guides/encoding/#varints
-
-            let mut size: usize = 0;
-            let mut size_byte_shift: u32 = 0;
+        self.task = Some(tokio::task::spawn(async move {
             loop {
-                let size_byte = stream.read_u8().await?;
-
-                // Strip the continuation bit
-                let size_byte_payload = size_byte & 0x7f;
-
-                // Least significant bytes are given first, so we shift left
-                // further as we continue to read size bytes.
-                let size_byte_amount = (size_byte_payload as usize) << size_byte_shift;
-
-                // Add the 7 payload bytes to the size
-                size += size_byte_amount;
-
-                if size_byte & 0x80 > 0 {
-                    // The continuation bit is set. Keep on reading bytes to determine the size.
-                    size_byte_shift += 7;
-                } else {
-                    // No continuation bit. We're done determining the size.
-                    break
+                let start = Instant::now();
+                let result = connect_internal(&registration, message_callback, &mut mutable_state).await;
+                let elapsed = start.elapsed();
+    
+                // If we quickly disconnected, propagate the error
+                if elapsed.as_secs() < 20 {
+                    return result;
                 }
+    
+                // Otherwise, try to connect again.
+                println!("Connection failed. Re-connecting.");
             }
+        }));
+    }
 
-            let mut payload_buffer = vec![0; size];
+    pub fn disconnect(&mut self) {
+        if let Some(task) = self.task.as_ref() {
+            task.abort();
+            self.task = None;
+        }
+    }
+}
 
-            stream.read_exact(&mut payload_buffer).await?;
+async fn connect_internal<F>(registration: &Registration, callback: F, mutable_state: &mut MutableFcmState) -> Result<(), Error>
+    where F: Fn(FcmMessage) + Send {
+    let mut root_store = rustls::RootCertStore::empty();
+    root_store.add_server_trust_anchors(
+        webpki_roots::TLS_SERVER_ROOTS
+            .0
+            .iter()
+            .map(|ta| {
+                rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
+                    ta.subject,
+                    ta.spki,
+                    ta.name_constraints,
+                )
+            })
+    );
 
-            match tag {
-                DATA_MESSAGE_STANZA_TAG => {
-                    let data_message = mcs::DataMessageStanza::decode(&payload_buffer[..])?;
+    let config = rustls::ClientConfig::builder()
+        .with_safe_defaults()
+        .with_root_certificates(root_store)
+        .with_no_client_auth();
 
-                    let mut persistent_id_2: Option<String> = None;
-                    if let Some(ref persistent_id) = data_message.persistent_id {
-                        persistent_id_2 = Some(String::from(persistent_id));
-                    }
-    
-                    let decrypt_result = self.decrypt_message(data_message)?;
-    
-                    let message = FcmMessage { payload_json: decrypt_result, persistent_id: persistent_id_2 };
-                    (self.message_callback)(message);
-                },
-                HEARTBEAT_PING_TAG => {
-                    println!("Got a HeartbeatPing, sending HeartbeatAck");
+    let connector = TlsConnector::from(Arc::new(config));
+    let server_name = "mtalk.google.com".try_into().expect("Google talk server name should resolve");
 
-                    stream.write_u8(HEARTBEAT_ACK_TAG).await?;
-    
-                    let heartbeat_ack = mcs::HeartbeatAck::default();
-                    let heartbeat_ack_bytes = heartbeat_ack.encode_length_delimited_to_vec();
-                    stream.write_all(&heartbeat_ack_bytes).await?;
-                },
-                LOGIN_RESPONSE_TAG => {
-                    self.received_persistent_ids.clear();
-                },
-                _ => {}
+    let stream = TcpStream::connect("mtalk.google.com:5228").await?;
+    let mut stream = connector.connect(server_name, stream).await?;
+
+    let login_request = create_login_request(registration, &mutable_state.received_persistent_ids);
+
+    let initial_bytes: Vec<u8> = vec![MCS_VERSION, LOGIN_REQUEST_TAG];
+    stream.write_all(&initial_bytes).await?;
+
+    // Login bytes are preceded by a varint indicating their length
+    let login_request_bytes = login_request.encode_length_delimited_to_vec();
+    stream.write_all(&login_request_bytes).await?;
+
+    // Buffer the reads to reduce sys calls
+    let mut buffered_reader = BufReader::new(stream);
+
+    // Read the version
+    buffered_reader.read_i8().await?;
+
+    // Read messages
+    read_message_loop(registration, callback, mutable_state, buffered_reader).await?;
+
+    Ok(())
+}
+
+async fn read_message_loop<'a, F>(registration: &Registration, callback: F, mutable_state: &mut MutableFcmState, mut stream: BufReader<TlsStream<TcpStream>>) -> Result<(), Error>
+    where F: Fn(FcmMessage) + Send {
+    loop {
+        let tag: u8 = stream.read_u8().await?;
+        println!("Got message with tag: {}", tag);
+
+        if tag == CLOSE_TAG {
+            break;
+        }
+
+        // The tag is followed by a varint that indicates the message size
+        // See https://protobuf.dev/programming-guides/encoding/#varints
+
+        let mut size: usize = 0;
+        let mut size_byte_shift: u32 = 0;
+        loop {
+            let size_byte = stream.read_u8().await?;
+
+            // Strip the continuation bit
+            let size_byte_payload = size_byte & 0x7f;
+
+            // Least significant bytes are given first, so we shift left
+            // further as we continue to read size bytes.
+            let size_byte_amount = (size_byte_payload as usize) << size_byte_shift;
+
+            // Add the 7 payload bytes to the size
+            size += size_byte_amount;
+
+            if size_byte & 0x80 > 0 {
+                // The continuation bit is set. Keep on reading bytes to determine the size.
+                size_byte_shift += 7;
+            } else {
+                // No continuation bit. We're done determining the size.
+                break
             }
         }
 
-        Ok(())
-    }
+        let mut payload_buffer = vec![0; size];
 
-    fn create_login_request(&self) -> mcs::LoginRequest {
-        let android_id = self.registration.gcm.android_id;
-        let device_id = format!("android-{:x}", android_id);
-    
-        mcs::LoginRequest {
-            adaptive_heartbeat: Some(false),
-            auth_service: Some(2),
-            auth_token: self.registration.gcm.security_token.to_string(),
-            id: "chrome-63.0.3234.0".to_owned(),
-            domain: "mcs.android.com".to_owned(),
-            device_id: Some(device_id),
-            network_type: Some(1),
-            resource: android_id.to_string(),
-            user: android_id.to_string(),
-            use_rmq2: Some(true),
-            setting: vec![mcs::Setting { name: "new_vc".to_owned(), value: "1".to_owned() }],
-            client_event: Vec::new(),
-            received_persistent_id: self.received_persistent_ids.clone(),
-            ..mcs::LoginRequest::default()
+        stream.read_exact(&mut payload_buffer).await?;
+
+        match tag {
+            DATA_MESSAGE_STANZA_TAG => {
+                let data_message = mcs::DataMessageStanza::decode(&payload_buffer[..])?;
+
+                let mut persistent_id_2: Option<String> = None;
+                if let Some(ref persistent_id) = data_message.persistent_id {
+                    persistent_id_2 = Some(String::from(persistent_id));
+                }
+
+                let decrypt_result = decrypt_message(registration, data_message)?;
+
+                let message = FcmMessage { payload_json: decrypt_result, persistent_id: persistent_id_2 };
+                callback(message);
+            },
+            HEARTBEAT_PING_TAG => {
+                println!("Got a HeartbeatPing, sending HeartbeatAck");
+
+                stream.write_u8(HEARTBEAT_ACK_TAG).await?;
+
+                let heartbeat_ack = mcs::HeartbeatAck::default();
+                let heartbeat_ack_bytes = heartbeat_ack.encode_length_delimited_to_vec();
+                stream.write_all(&heartbeat_ack_bytes).await?;
+            },
+            LOGIN_RESPONSE_TAG => {
+                mutable_state.received_persistent_ids.clear();
+            },
+            _ => {}
         }
     }
 
-    fn decrypt_message(&self, message: mcs::DataMessageStanza) -> Result<String, Error> {
-        let raw_data = message.raw_data.ok_or(Error::MissingMessagePayload)?;
-    
-        let crypto_key = find_app_data(&message.app_data, "crypto-key").ok_or(Error::MissingCryptoMetadata)?;
-        let encryption = find_app_data(&message.app_data, "encryption").ok_or(Error::MissingCryptoMetadata)?;
-    
-        // crypto_key is in the format dh=abc...
-        let dh_bytes = URL_SAFE.decode(&crypto_key[3..])?;
+    Ok(())
+}
 
-        // encryption is in the format salt=abc...
-        let salt_bytes = URL_SAFE.decode(&encryption[5..])?;
+fn decrypt_message(registration: &Registration, message: mcs::DataMessageStanza) -> Result<String, Error> {
+    let raw_data = message.raw_data.ok_or(Error::MissingMessagePayload)?;
 
-        let keys = &self.registration.keys;
-    
-        let public_key_bytes = URL_SAFE_NO_PAD.decode(&keys.public_key)?;
-        let private_key_bytes = URL_SAFE_NO_PAD.decode(&keys.private_key)?;
-        let auth_secret_bytes = URL_SAFE_NO_PAD.decode(&keys.auth_secret)?;
-    
-        let components = EcKeyComponents::new(private_key_bytes, public_key_bytes);
-    
-        // The record size default is 4096 and doesn't seem to be overridden for FCM.
-        let record_size: u32 = 4096;
-        let encrypted_block = ece::legacy::AesGcmEncryptedBlock::new(&dh_bytes, &salt_bytes, record_size, raw_data)?;
-        let data_bytes = ece::legacy::decrypt_aesgcm(&components, &auth_secret_bytes, &encrypted_block)?;
-    
-        let payload_json = String::from_utf8(data_bytes)?;
-    
-        Ok(payload_json)
+    let crypto_key = find_app_data(&message.app_data, "crypto-key").ok_or(Error::MissingCryptoMetadata)?;
+    let encryption = find_app_data(&message.app_data, "encryption").ok_or(Error::MissingCryptoMetadata)?;
+
+    // crypto_key is in the format dh=abc...
+    let dh_bytes = URL_SAFE.decode(&crypto_key[3..])?;
+
+    // encryption is in the format salt=abc...
+    let salt_bytes = URL_SAFE.decode(&encryption[5..])?;
+
+    let keys = &registration.keys;
+
+    let public_key_bytes = URL_SAFE_NO_PAD.decode(&keys.public_key)?;
+    let private_key_bytes = URL_SAFE_NO_PAD.decode(&keys.private_key)?;
+    let auth_secret_bytes = URL_SAFE_NO_PAD.decode(&keys.auth_secret)?;
+
+    let components = EcKeyComponents::new(private_key_bytes, public_key_bytes);
+
+    // The record size default is 4096 and doesn't seem to be overridden for FCM.
+    let record_size: u32 = 4096;
+    let encrypted_block = ece::legacy::AesGcmEncryptedBlock::new(&dh_bytes, &salt_bytes, record_size, raw_data)?;
+    let data_bytes = ece::legacy::decrypt_aesgcm(&components, &auth_secret_bytes, &encrypted_block)?;
+
+    let payload_json = String::from_utf8(data_bytes)?;
+
+    Ok(payload_json)
+}
+
+fn create_login_request(registration: &Registration, received_persistent_ids: &Vec<String>) -> mcs::LoginRequest {
+    let android_id = registration.gcm.android_id;
+    let device_id = format!("android-{:x}", android_id);
+
+    mcs::LoginRequest {
+        adaptive_heartbeat: Some(false),
+        auth_service: Some(2),
+        auth_token: registration.gcm.security_token.to_string(),
+        id: "chrome-63.0.3234.0".to_owned(),
+        domain: "mcs.android.com".to_owned(),
+        device_id: Some(device_id),
+        network_type: Some(1),
+        resource: android_id.to_string(),
+        user: android_id.to_string(),
+        use_rmq2: Some(true),
+        setting: vec![mcs::Setting { name: "new_vc".to_owned(), value: "1".to_owned() }],
+        client_event: Vec::new(),
+        received_persistent_id: received_persistent_ids.clone(),
+        ..mcs::LoginRequest::default()
     }
 }
 

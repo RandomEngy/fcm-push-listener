@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 use crate::Error;
 
@@ -14,6 +14,7 @@ struct FcmSubscribeResponse {
     token: String,
 }
 
+#[derive(Clone, Serialize, Deserialize)]
 pub struct WebPushKeys {
     /// Public key with URL safe base64 encoding, no padding
     pub public_key: String,
