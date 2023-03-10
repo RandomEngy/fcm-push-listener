@@ -8,7 +8,7 @@ use prost::Message;
 use base64::{Engine as _, engine::general_purpose::{URL_SAFE_NO_PAD, URL_SAFE}};
 use std::time::Instant;
 
-use crate::{Error, Registration};
+use crate::{Error, Registration, gcm};
 
 const MCS_VERSION: u8 = 41;
 
@@ -116,6 +116,9 @@ impl PushListenerWorker {
     }
 
     async fn connect_internal(&mut self) -> Result<(), Error> {
+        // First check in to let GCM know the device is still functioning
+        gcm::check_in(Some(self.registration.gcm.android_id), Some(self.registration.gcm.security_token)).await?;
+
         let mut root_store = rustls::RootCertStore::empty();
         root_store.add_server_trust_anchors(
             webpki_roots::TLS_SERVER_ROOTS

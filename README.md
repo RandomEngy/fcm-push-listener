@@ -21,7 +21,7 @@ let mut listener = FcmPushListener::create(
 listener.connect().await?;
 ```
 
-You need to save the persistent IDs of the messages you receive, then pass them in on the next call to `connect()`. That way you acnowledge receipt of the messages and avoid firing them again.
+You need to save the persistent IDs of the messages you receive, then pass them in on the next call to `connect()`. That way you acknowledge receipt of the messages and avoid firing them again.
 
 The registration has secrets needed the decrypt the push messages; store it in a secure location and re-use it on the next call to `connect()`.
 
