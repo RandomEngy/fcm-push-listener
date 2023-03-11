@@ -17,6 +17,7 @@ let mut listener = FcmPushListener::create(
         println!("Message JSON: {}", message.payload_json);
         println!("Persistent ID: {:?}", message.persistent_id);
     },
+    |err| { eprintln!("{:?}", err) },
     vec!["0:1677356129944104%7031b2e6f9fd7ecd".to_owned()]);
 listener.connect().await?;
 ```
