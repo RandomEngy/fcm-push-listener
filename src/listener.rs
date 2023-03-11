@@ -1,5 +1,6 @@
 use std::{sync::Arc, str};
 use ece::EcKeyComponents;
+use log::{debug, warn};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio_rustls::{rustls, TlsConnector, client::TlsStream};
@@ -76,6 +77,7 @@ impl<FMessage> FcmPushListener<FMessage>
                 return result;
             }
 
+            warn!("Connection failed. Retrying.");
             // Otherwise, try to connect again.
         }
     }
@@ -134,6 +136,8 @@ impl<FMessage> FcmPushListener<FMessage>
         loop {
             let tag: u8 = stream.read_u8().await?;
 
+            debug!("Push message listener read tag: {}", tag);
+
             if tag == CLOSE_TAG {
                 break;
             }
@@ -184,8 +188,6 @@ impl<FMessage> FcmPushListener<FMessage>
                     (self.message_callback)(message);
                 },
                 HEARTBEAT_PING_TAG => {
-                    println!("Got a HeartbeatPing, sending HeartbeatAck");
-
                     stream.write_u8(HEARTBEAT_ACK_TAG).await?;
 
                     let heartbeat_ack = mcs::HeartbeatAck::default();

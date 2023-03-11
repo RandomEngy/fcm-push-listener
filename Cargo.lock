@@ -276,6 +276,7 @@ version = "2.0.0"
 dependencies = [
  "base64 0.21.0",
  "ece",
+ "log",
  "prost",
  "prost-build",
  "reqwest",
