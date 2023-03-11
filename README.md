@@ -24,7 +24,7 @@ listener.connect().await?;
 
 You need to save the persistent IDs of the messages you receive, then pass them in on the next call to `connect()`. That way you acknowledge receipt of the messages and avoid firing them again.
 
-The registration has secrets needed the decrypt the push messages; store it in a secure location and re-use it on the next call to `connect()`.
+The registration has secrets needed the decrypt the push messages; store it in a secure location and re-use it on the next call to `connect()`. `Registration` is marked as `Serialize` and `Deserialize` so you can directly use it.
 
 Example `payload_json`:
 ```json
@@ -39,6 +39,60 @@ Example `payload_json`:
 ```
 
 The `data` property holds the object that was pushed. You can do JSON parsing with whatever library you choose.
+
+## Cancellation
+
+Since `connect()` returns a `Future` and runs for a long time, I recommend creating and starting the listener from a task. Then you can cancel/abort the task to stop the push listener, and it leaves your app free to do other activities on the main thread.
+
+For example, you could set up a service to manage the push listener:
+
+```rust
+struct PushService {
+    task: Option<JoinHandle<()>>,
+    some_state: String,
+}
+
+impl PushService {
+    pub fn new() -> Self {
+        PushService {
+            task: None,
+            some_state: "abc".to_owned()
+        }
+    }
+
+    pub fn start(&mut self) {
+        let some_state = self.some_state.clone();
+
+        self.task = Some(tokio::task::spawn(async move {
+            let registration = /* Get registration from storage or call fcm_push_listener::register() */;
+
+            let mut listener = FcmPushListener::create(
+                registration,
+                |message: FcmMessage| {
+                    println!("Captured state: {}", some_state);
+        
+                    println!("Message JSON: {}", message.payload_json);
+                    println!("Persistent ID: {:?}", message.persistent_id);
+                },
+                vec![]);
+
+            let result = listener.connect().await;
+            if let Err(err) = result {
+                eprintln!("{:?}", err);
+            }
+        }));
+    }
+
+    pub fn stop(&mut self) {
+        if let Some(task) = &self.task {
+            task.abort();
+            self.task = None;
+        }
+    }
+}
+```
+
+Then keep an instance of PushService around and call `stop()` on it when you need to cancel.
 
 # Implementation
 

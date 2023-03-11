@@ -2,7 +2,6 @@ use std::{sync::Arc, str};
 use ece::EcKeyComponents;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
-use tokio::task::JoinHandle;
 use tokio_rustls::{rustls, TlsConnector, client::TlsStream};
 use prost::Message;
 use base64::{Engine as _, engine::general_purpose::{URL_SAFE_NO_PAD, URL_SAFE}};
@@ -42,12 +41,10 @@ const LOGIN_RESPONSE_TAG: u8 = 3;
 const CLOSE_TAG: u8 = 4;
 const DATA_MESSAGE_STANZA_TAG: u8 = 8;
 
-pub struct FcmPushListener {
+pub struct FcmPushListener<FMessage : Fn(FcmMessage)> {
     registration: Registration,
-    message_callback: fn(FcmMessage),
-    error_callback: fn(&Error),
+    message_callback: FMessage,
     received_persistent_ids: Vec<String>,
-    task: Option<JoinHandle<Result<(), Error>>>,
 }
 
 pub struct FcmMessage {
@@ -55,71 +52,31 @@ pub struct FcmMessage {
     pub persistent_id: Option<String>,
 }
 
-impl FcmPushListener {
+impl<FMessage> FcmPushListener<FMessage>
+    where FMessage : Fn(FcmMessage) {
     pub fn create(
         registration: Registration,
-        message_callback: fn(FcmMessage),
-        error_callback: fn(&Error),
+        message_callback: FMessage,
         received_persistent_ids: Vec<String>) -> Self {
         FcmPushListener {
             registration,
             message_callback,
-            error_callback,
             received_persistent_ids,
-            task: None,
         }
     }
 
-    pub fn connect(&mut self) {
-        let registration = self.registration.clone();
-        let message_callback = self.message_callback;
-        let error_callback = self.error_callback;
-        let received_persistent_ids = self.received_persistent_ids.clone();
+    pub async fn connect(&mut self) -> Result<(), Error> {
+        loop {
+            let start = Instant::now();
+            let result = self.connect_internal().await;
+            let elapsed = start.elapsed();
 
-        self.task = Some(tokio::task::spawn(async move {
-            let mut worker = PushListenerWorker::new(registration, received_persistent_ids, message_callback);
-
-            loop {
-                let start = Instant::now();
-                let result = worker.connect_internal().await;
-                let elapsed = start.elapsed();
-    
-                if let Err(err) = &result {
-                    error_callback(err);
-                }
-
-                // If we quickly disconnected, propagate the error
-                if elapsed.as_secs() < 20 {
-                    return result;
-                }
-    
-                // Otherwise, try to connect again.
-                //println!("Connection failed. Re-connecting.");
+            // If we quickly disconnected, propagate the error
+            if elapsed.as_secs() < 20 {
+                return result;
             }
-        }));
-    }
 
-    pub fn disconnect(&mut self) {
-        if let Some(task) = self.task.as_ref() {
-            task.abort();
-            self.task = None;
-        }
-    }
-}
-
-/// The worker task state/logic.
-struct PushListenerWorker {
-    registration: Registration,
-    received_persistent_ids: Vec<String>,
-    message_callback: fn(FcmMessage),
-}
-
-impl PushListenerWorker {
-    pub fn new(registration: Registration, received_persistent_ids: Vec<String>, message_callback: fn(FcmMessage)) -> PushListenerWorker {
-        PushListenerWorker {
-            registration,
-            received_persistent_ids,
-            message_callback,
+            // Otherwise, try to connect again.
         }
     }
 
