@@ -1,5 +1,6 @@
 use serde::Deserialize;
 use serde::Serialize;
+use serde_with::{serde_as, DisplayFromStr};
 use uuid::Uuid;
 
 use crate::Error;
@@ -7,9 +8,15 @@ use crate::fcm::WebPushKeys;
 use crate::gcm;
 use crate::fcm;
 
+// Normal JSON serialization will lose precision and change the number, so we must
+// force the i64/u64 to serialize to string.
+#[serde_as]
 #[derive(Clone, Serialize, Deserialize)]
 pub struct GcmRegistration {
+    #[serde_as(as = "DisplayFromStr")] 
     pub android_id: i64,
+
+    #[serde_as(as = "DisplayFromStr")]
     pub security_token: u64,
 }
 

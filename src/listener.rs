@@ -45,6 +45,7 @@ const DATA_MESSAGE_STANZA_TAG: u8 = 8;
 pub struct FcmPushListener {
     registration: Registration,
     message_callback: fn(FcmMessage),
+    error_callback: fn(&Error),
     received_persistent_ids: Vec<String>,
     task: Option<JoinHandle<Result<(), Error>>>,
 }
@@ -58,10 +59,12 @@ impl FcmPushListener {
     pub fn create(
         registration: Registration,
         message_callback: fn(FcmMessage),
-        received_persistent_ids: Vec<String>) -> FcmPushListener {
+        error_callback: fn(&Error),
+        received_persistent_ids: Vec<String>) -> Self {
         FcmPushListener {
             registration,
             message_callback,
+            error_callback,
             received_persistent_ids,
             task: None,
         }
@@ -70,6 +73,7 @@ impl FcmPushListener {
     pub fn connect(&mut self) {
         let registration = self.registration.clone();
         let message_callback = self.message_callback;
+        let error_callback = self.error_callback;
         let received_persistent_ids = self.received_persistent_ids.clone();
 
         self.task = Some(tokio::task::spawn(async move {
@@ -80,6 +84,10 @@ impl FcmPushListener {
                 let result = worker.connect_internal().await;
                 let elapsed = start.elapsed();
     
+                if let Err(err) = &result {
+                    error_callback(err);
+                }
+
                 // If we quickly disconnected, propagate the error
                 if elapsed.as_secs() < 20 {
                     return result;

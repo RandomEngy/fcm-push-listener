@@ -1,6 +1,6 @@
 [package]
 name = "fcm-push-listener"
-version = "0.2.2"
+version = "1.0.0"
 edition = "2021"
 license = "MIT"
 description = "Listen for push messages from Firebase Cloud Messaging (FCM)."
@@ -16,6 +16,7 @@ tokio = { version = "1.25.0", features = ["macros", "rt-multi-thread", "net"] }
 ece = "2.2.0"
 base64 = "0.21.0"
 serde = "1.0.152"
+serde_with = "2.3.0"
 webpki-roots = "0.22.6"
 tokio-rustls = "0.23.4"
 
