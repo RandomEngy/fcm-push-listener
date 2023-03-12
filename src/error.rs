@@ -1,4 +1,5 @@
 use std::{fmt, string::FromUtf8Error};
+use std::error;
 
 #[derive(Debug)]
 pub enum Error {
@@ -73,6 +74,23 @@ impl fmt::Display for Error {
                 write!(f, "Register HTTP call failed."),
             Error::Socket(..) =>
                 write!(f, "TCP socket failed."),
+        }
+    }
+}
+
+impl error::Error for Error {
+    fn source(&self) -> Option<&(dyn error::Error + 'static)> {
+        match *self {
+            Error::MissingMessagePayload => None,
+            Error::MissingCryptoMetadata => None,
+            Error::ProtobufDecode(ref e) => Some(e),
+            Error::Base64Decode(ref e) => Some(e),
+            Error::FromUtf8(ref e) => Some(e),
+            Error::InvalidResponse(ref _e) => None,
+            Error::ServerError(ref _e) => None,
+            Error::KeyCreation(ref e) => Some(e),
+            Error::Http(ref e) => Some(e),
+            Error::Socket(ref e) => Some(e),
         }
     }
 }
