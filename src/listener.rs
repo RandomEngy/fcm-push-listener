@@ -136,8 +136,6 @@ impl<FMessage> FcmPushListener<FMessage>
         loop {
             let tag: u8 = stream.read_u8().await?;
 
-            debug!("Push message listener read tag: {}", tag);
-
             if tag == CLOSE_TAG {
                 break;
             }
@@ -171,6 +169,8 @@ impl<FMessage> FcmPushListener<FMessage>
 
             let mut payload_buffer = vec![0; size];
 
+            debug!("Push message listener read tag {} with payload size {}", tag, size);
+
             stream.read_exact(&mut payload_buffer).await?;
 
             match tag {
@@ -182,10 +182,14 @@ impl<FMessage> FcmPushListener<FMessage>
                         persistent_id_2 = Some(String::from(persistent_id));
                     }
 
-                    let decrypt_result = self.decrypt_message(data_message)?;
-
-                    let message = FcmMessage { payload_json: decrypt_result, persistent_id: persistent_id_2 };
-                    (self.message_callback)(message);
+                    if data_message.raw_data.is_some() {
+                        let decrypt_result = self.decrypt_message(data_message)?;
+    
+                        let message = FcmMessage { payload_json: decrypt_result, persistent_id: persistent_id_2 };
+                        (self.message_callback)(message);
+                    } else {
+                        debug!("Received data message with empty raw_data");
+                    }
                 },
                 HEARTBEAT_PING_TAG => {
                     stream.write_u8(HEARTBEAT_ACK_TAG).await?;

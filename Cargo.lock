@@ -272,7 +272,7 @@ dependencies = [
 
 [[package]]
 name = "fcm-push-listener"
-version = "2.0.1"
+version = "2.0.2"
 dependencies = [
  "base64 0.21.0",
  "ece",
