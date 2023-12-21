@@ -1,3 +1,9 @@
+# IMPORTANT
+
+[An endpoint that this library is dependent upon will be shut down on June 20, 2024](https://firebase.google.com/support/faq#fcm-23-deprecation).
+
+I'm seeing if I can figure out an alternate implementation before then, but no guarantees. Let me know if you want to help.
+
 # Overview
 
 This crate will listen for push messages from Firebase Cloud Messaging (FCM).
