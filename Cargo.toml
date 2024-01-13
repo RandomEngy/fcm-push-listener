@@ -1,6 +1,6 @@
 [package]
 name = "fcm-push-listener"
-version = "2.0.3"
+version = "3.0.0"
 edition = "2021"
 license = "MIT"
 description = "Listen for push messages from Firebase Cloud Messaging (FCM)."
@@ -14,6 +14,7 @@ base64 = "0.21.0"
 ece = "2.2.0"
 log = "0.4.17"
 prost = "0.11.6"
+rand = "0.8.5"
 reqwest = { version = "0.11.14", features = ["json"] }
 serde = "1.0.152"
 serde_with = "2.3.0"

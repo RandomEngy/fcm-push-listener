@@ -272,13 +272,14 @@ dependencies = [
 
 [[package]]
 name = "fcm-push-listener"
-version = "2.0.3"
+version = "3.0.0"
 dependencies = [
  "base64 0.21.0",
  "ece",
  "log",
  "prost",
  "prost-build",
+ "rand",
  "reqwest",
  "serde",
  "serde_with",

@@ -1,19 +1,41 @@
-# IMPORTANT
-
-[An endpoint that this library is dependent upon will be shut down on June 20, 2024](https://firebase.google.com/support/faq#fcm-23-deprecation).
-
-I don't plan on trying to get this working again as it looks like it would be extremely difficult. Sadly I don't know any other good push listener library in Rust; if you write one or find one, let me know.
-
 # Overview
 
 This crate will listen for push messages from Firebase Cloud Messaging (FCM).
+
+# IMPORTANT
+
+Registration for versions older than 3.0.0 will stop working on June 20, 2024, since Google is shutting down an API it calls. You'll need to upgrade by that time for the library to keep working.
+
+# Prerequisites
+
+1. **Firebase App ID** - Firebase console -> Project settings -> General -> Your apps -> App ID
+
+Make this an Android app, since we will be calling the Android device checkin API.
+
+2. **Firebase Project ID** - Firebase console -> Project settings -> General -> Project ID
+3. **Firebase API Key** - Google Cloud console -> APIs and Services -> Credentials -> API Keys
+
+Needed permissions for the API key: Firebase Cloud Messaging API, Cloud Messaging, Firebase Installations API, FCM Registration API.
+
+4. **VAPID key** - Firebase console -> Project settings -> Cloud Messaging -> Web configuration -> Web push certificates
+
+You want the public key listed under the "Key pair" column.
 
 # Usage
 
 ```rust
 use fcm_push_listener::FcmPushListener;
 
-let registration = fcm_push_listener::register("1001234567890").await?;
+let firebase_app_id = "1:1001234567890:android:2665128ba997ffab830a24";
+let firebase_project_id = "myapp-1234567890123";
+let firebase_api_key = "aBcDeFgHiJkLmNoPqRsTu01234_aBcD0123456789";
+let vapid_key = "BClpBSn3aL7aZ2JZxWB0RrdBqw-5-A7xLoeoxBWdcjxnby4MFvTG8nIa1KHmSY2-cmCAySR4PoCcOZtW18aXNw1";
+
+let registration = fcm_push_listener::register(
+    firebase_app_id,
+    firebase_project_id,
+    firebase_api_key,
+    vapid_key).await?;
 
 // Send registration.fcm_token to the server to allow it to send push messages to you.
 
@@ -27,6 +49,8 @@ let mut listener = FcmPushListener::create(
     vec!["0:1677356129944104%7031b2e6f9fd7ecd".to_owned()]);
 listener.connect().await?;
 ```
+
+##
 
 You need to save the persistent IDs of the messages you receive, then pass them in on the next call to `connect()`. That way you acknowledge receipt of the messages and avoid firing them again.
 
@@ -113,9 +137,10 @@ Then keep an instance of PushService around and call `stop()` on it when you nee
 ## `register()`
 
 1) Calls https://android.clients.google.com/checkin to get an android ID.
-2) Calls https://android.clients.google.com/c2dm/register3 to register with GCM. Gives you a GCM token and a security token.
-3) Creates an encryption key pair using the legacy `aesgcm` mode of the `ece` crate.
-4) Calls https://fcm.googleapis.com/fcm/connect/subscribe with the GCM token, the sender ID that you supply on the `register()` call and the public key and auth secret created in the previous step.
+2) Calls https://android.clients.google.com/c2dm/register3 to register with GCM. Gives you a GCM token and a security token. (The GCM token is sometimes called an ACG token by other libraries)
+3) Calls https://firebaseinstallations.googleapis.com/v1/projects/{project_id}/installations to get a Firebase installation token.
+4) Creates an encryption key pair using the legacy `aesgcm` mode of the `ece` crate.
+5) Calls https://fcmregistrations.googleapis.com/v1/projects/{project_id}/registrations to do the final FCM registration and get the FCM token.
 
 ## `FcmPushListener.connect()`
 
