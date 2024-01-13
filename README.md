@@ -158,7 +158,9 @@ If the connection is closed after successfully establishing, it will automatical
 
 # Acknowledgements
 
-This is based on the NPM package [push-reciever](https://github.com/MatthieuLemoine/push-receiver) by Matthieu Lemoine. His [reverse-engineering effort](https://medium.com/@MatthieuLemoine/my-journey-to-bring-web-push-support-to-node-and-electron-ce70eea1c0b0) was quite heroic!
+The original version is based on the NPM package [push-reciever](https://github.com/MatthieuLemoine/push-receiver) by Matthieu Lemoine. His [reverse-engineering effort](https://medium.com/@MatthieuLemoine/my-journey-to-bring-web-push-support-to-node-and-electron-ce70eea1c0b0) was quite heroic!
+
+The changes for v3 were based on [@aracna/fcm](https://aracna.dariosechi.it/fcm/get-started/) by Dario Sechi.
 
 # Build setup
 
