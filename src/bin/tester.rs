@@ -1,19 +1,8 @@
-// To test the listener:
-// 1) Rename this to main.rs
-// 2) Plug in a registration
-// 3) cargo run
-
-mod fcm;
-mod gcm;
-mod error;
-mod register;
-mod listener;
-
-pub use error::Error;
-use register::Registration;
-use register::GcmRegistration;
-use fcm::WebPushKeys;
-use listener::{FcmPushListener, FcmMessage};
+pub use fcm_push_listener::Error;
+use fcm_push_listener::Registration;
+use fcm_push_listener::GcmRegistration;
+use fcm_push_listener::WebPushKeys;
+use fcm_push_listener::{FcmPushListener, FcmMessage};
 use tokio::task::JoinHandle;
 
 pub mod checkin {
