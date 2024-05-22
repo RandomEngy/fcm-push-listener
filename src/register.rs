@@ -5,7 +5,7 @@ use uuid::Uuid;
 
 use crate::Error;
 use crate::fcm::WebPushKeys;
-use crate::firebase_installations;
+use crate::firebase;
 use crate::gcm;
 use crate::fcm;
 
@@ -39,7 +39,7 @@ pub async fn register(firebase_app_id: &str, firebase_project_id: &str, firebase
     let gcm_token = gcm::register(&gcm_app_id, checkin_result.android_id, checkin_result.security_token).await?;
 
     log::debug!("Getting Firebase installation token");
-    let firebase_installation_token = firebase_installations::get_installation(
+    let firebase_installation_token = firebase::get_installation(
         firebase_app_id,
         firebase_project_id,
         firebase_api_key).await?;

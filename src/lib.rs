@@ -1,6 +1,6 @@
 mod gcm;
 mod fcm;
-mod firebase_installations;
+mod firebase;
 mod error;
 mod register;
 mod listener;
