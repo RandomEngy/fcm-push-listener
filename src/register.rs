@@ -53,7 +53,7 @@ pub async fn register(
         firebase::get_installation(firebase_app_id, firebase_project_id, firebase_api_key).await?;
 
     log::debug!("Calling FCM register");
-    let fcm_register_result = fcm::register_fcm(
+    let fcm_register_result = fcm::Registration::request(
         firebase_project_id,
         firebase_api_key,
         vapid_key,

@@ -6,18 +6,60 @@ pub struct Registration {
     pub keys: WebPushKeys,
 }
 
+impl Registration {
+    pub async fn request(
+        project_id: &str,
+        api_key: &str,
+        application_pub_key: &str,
+        firebase_installation_auth_token: &str,
+        gcm_token: &str,
+    ) -> Result<Self, Error> {
+        let endpoint = format!("https://fcm.googleapis.com/fcm/send/{gcm_token}");
+        let push_keys = WebPushKeys::new()?;
+        let request = RegisterRequest {
+            web: WebRegistrationRequest {
+                application_pub_key: application_pub_key,
+                auth: &push_keys.auth_secret,
+                endpoint: &endpoint,
+                p256dh: &push_keys.public_key,
+            },
+        };
+
+        let client = reqwest::Client::new();
+        let url = format!(
+            "https://fcmregistrations.googleapis.com/v1/projects/{project_id}/registrations"
+        );
+        let response = client
+            .post(url)
+            .json(&request)
+            .header("x-goog-api-key", api_key)
+            .header(
+                "x-goog-firebase-installations-auth",
+                firebase_installation_auth_token,
+            )
+            .send()
+            .await?;
+
+        let response: RegisterResponse = response.json().await?;
+        Ok(Self {
+            fcm_token: response.token,
+            keys: push_keys,
+        })
+    }
+}
+
 #[derive(Serialize)]
-struct RegisterRequest {
-    web: WebRegistrationRequest,
+struct RegisterRequest<'a> {
+    web: WebRegistrationRequest<'a>,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct WebRegistrationRequest {
-    application_pub_key: String,
-    auth: String,
-    endpoint: String,
-    p256dh: String,
+struct WebRegistrationRequest<'a> {
+    application_pub_key: &'a str,
+    auth: &'a str,
+    endpoint: &'a str,
+    p256dh: &'a str,
 }
 
 #[derive(Deserialize)]
@@ -48,59 +90,17 @@ pub struct WebPushKeys {
     pub auth_secret: String,
 }
 
-pub async fn register_fcm(
-    project_id: &str,
-    api_key: &str,
-    application_pub_key: &str,
-    firebase_installation_auth_token: &str,
-    gcm_token: &str,
-) -> Result<Registration, Error> {
-    let endpoint = format!("https://fcm.googleapis.com/fcm/send/{gcm_token}");
+impl WebPushKeys {
+    fn new() -> Result<Self, ece::Error> {
+        use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+        use base64::engine::Engine;
 
-    let push_keys: WebPushKeys = create_key_pair()?;
-
-    let request = RegisterRequest {
-        web: WebRegistrationRequest {
-            application_pub_key: String::from(application_pub_key),
-            auth: push_keys.auth_secret.clone(),
-            endpoint: endpoint.clone(),
-            p256dh: push_keys.public_key.clone(),
-        },
-    };
-
-    let client = reqwest::Client::new();
-    let url =
-        format!("https://fcmregistrations.googleapis.com/v1/projects/{project_id}/registrations");
-    let response = client
-        .post(url)
-        .json(&request)
-        .header("x-goog-api-key", api_key)
-        .header(
-            "x-goog-firebase-installations-auth",
-            firebase_installation_auth_token,
-        )
-        .send()
-        .await?;
-
-    let response: RegisterResponse = response.json().await?;
-
-    Ok(Registration {
-        fcm_token: response.token,
-        keys: push_keys,
-    })
-}
-
-fn create_key_pair() -> Result<WebPushKeys, ece::Error> {
-    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-    use base64::engine::Engine;
-
-    let (keypair, auth_secret) = ece::generate_keypair_and_auth_secret()?;
-
-    let components = keypair.raw_components()?;
-
-    Ok(WebPushKeys {
-        public_key: URL_SAFE_NO_PAD.encode(components.public_key()),
-        private_key: URL_SAFE_NO_PAD.encode(components.private_key()),
-        auth_secret: URL_SAFE_NO_PAD.encode(auth_secret),
-    })
+        let (key_pair, auth_secret) = ece::generate_keypair_and_auth_secret()?;
+        let components = key_pair.raw_components()?;
+        Ok(WebPushKeys {
+            public_key: URL_SAFE_NO_PAD.encode(components.public_key()),
+            private_key: URL_SAFE_NO_PAD.encode(components.private_key()),
+            auth_secret: URL_SAFE_NO_PAD.encode(auth_secret),
+        })
+    }
 }
