@@ -65,15 +65,20 @@ pub async fn register_fcm(
             auth: push_keys.auth_secret.clone(),
             endpoint: endpoint.clone(),
             p256dh: push_keys.public_key.clone(),
-        }
+        },
     };
 
     let client = reqwest::Client::new();
-    let url = format!("https://fcmregistrations.googleapis.com/v1/projects/{project_id}/registrations");
-    let response = client.post(url)
+    let url =
+        format!("https://fcmregistrations.googleapis.com/v1/projects/{project_id}/registrations");
+    let response = client
+        .post(url)
         .json(&request)
         .header("x-goog-api-key", api_key)
-        .header("x-goog-firebase-installations-auth", firebase_installation_auth_token)
+        .header(
+            "x-goog-firebase-installations-auth",
+            firebase_installation_auth_token,
+        )
         .send()
         .await?;
 
@@ -81,13 +86,13 @@ pub async fn register_fcm(
 
     Ok(Registration {
         fcm_token: response.token,
-        keys: push_keys
+        keys: push_keys,
     })
 }
 
 fn create_key_pair() -> Result<WebPushKeys, ece::Error> {
-    use base64::engine::Engine;
     use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+    use base64::engine::Engine;
 
     let (keypair, auth_secret) = ece::generate_keypair_and_auth_secret()?;
 
@@ -96,6 +101,6 @@ fn create_key_pair() -> Result<WebPushKeys, ece::Error> {
     Ok(WebPushKeys {
         public_key: URL_SAFE_NO_PAD.encode(components.public_key()),
         private_key: URL_SAFE_NO_PAD.encode(components.private_key()),
-        auth_secret: URL_SAFE_NO_PAD.encode(auth_secret)
+        auth_secret: URL_SAFE_NO_PAD.encode(auth_secret),
     })
 }

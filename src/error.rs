@@ -1,5 +1,5 @@
-use std::{fmt, string::FromUtf8Error};
 use std::error;
+use std::{fmt, string::FromUtf8Error};
 
 #[derive(Debug)]
 pub enum Error {
@@ -54,26 +54,16 @@ impl From<std::io::Error> for Error {
 impl fmt::Display for Error {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         match self {
-            Error::MissingMessagePayload =>
-                write!(f, "Message payload is missing"),
-            Error::MissingCryptoMetadata =>
-                write!(f, "Missing crypto metadata on message."),
-            Error::ProtobufDecode(..) =>
-                write!(f, "Error decoding response."),
-            Error::Base64Decode(..) =>
-                write!(f, "Error decoding base64 string."),
-            Error::FromUtf8(..) =>
-                write!(f, "Error getting string from UTF8"),
-            Error::InvalidResponse(url) => 
-                write!(f, "Response from call to {} was invalid.", url),
-            Error::ServerError(details) =>
-                write!(f, "Error from server: {}", details),
-            Error::KeyCreation(..) =>
-                write!(f, "Creating encryption keys failed."),
-            Error::Http(..) => 
-                write!(f, "Register HTTP call failed."),
-            Error::Socket(..) =>
-                write!(f, "TCP socket failed."),
+            Error::MissingMessagePayload => write!(f, "Message payload is missing"),
+            Error::MissingCryptoMetadata => write!(f, "Missing crypto metadata on message."),
+            Error::ProtobufDecode(..) => write!(f, "Error decoding response."),
+            Error::Base64Decode(..) => write!(f, "Error decoding base64 string."),
+            Error::FromUtf8(..) => write!(f, "Error getting string from UTF8"),
+            Error::InvalidResponse(url) => write!(f, "Response from call to {} was invalid.", url),
+            Error::ServerError(details) => write!(f, "Error from server: {}", details),
+            Error::KeyCreation(..) => write!(f, "Creating encryption keys failed."),
+            Error::Http(..) => write!(f, "Register HTTP call failed."),
+            Error::Socket(..) => write!(f, "TCP socket failed."),
         }
     }
 }

@@ -1,14 +1,17 @@
-use std::{sync::Arc, str};
+use base64::{
+    engine::general_purpose::{URL_SAFE, URL_SAFE_NO_PAD},
+    Engine as _,
+};
 use ece::EcKeyComponents;
 use log::{debug, warn};
+use prost::Message;
+use std::time::Instant;
+use std::{str, sync::Arc};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
-use tokio_rustls::{rustls, TlsConnector, client::TlsStream};
-use prost::Message;
-use base64::{Engine as _, engine::general_purpose::{URL_SAFE_NO_PAD, URL_SAFE}};
-use std::time::Instant;
+use tokio_rustls::{client::TlsStream, rustls, TlsConnector};
 
-use crate::{Error, Registration, gcm};
+use crate::{gcm, Error, Registration};
 
 const MCS_VERSION: u8 = 41;
 
@@ -42,7 +45,7 @@ const LOGIN_RESPONSE_TAG: u8 = 3;
 const CLOSE_TAG: u8 = 4;
 const DATA_MESSAGE_STANZA_TAG: u8 = 8;
 
-pub struct FcmPushListener<FMessage : Fn(FcmMessage)> {
+pub struct FcmPushListener<FMessage: Fn(FcmMessage)> {
     registration: Registration,
     message_callback: FMessage,
     received_persistent_ids: Vec<String>,
@@ -54,11 +57,14 @@ pub struct FcmMessage {
 }
 
 impl<FMessage> FcmPushListener<FMessage>
-    where FMessage : Fn(FcmMessage) {
+where
+    FMessage: Fn(FcmMessage),
+{
     pub fn create(
         registration: Registration,
         message_callback: FMessage,
-        received_persistent_ids: Vec<String>) -> Self {
+        received_persistent_ids: Vec<String>,
+    ) -> Self {
         FcmPushListener {
             registration,
             message_callback,
@@ -84,55 +90,59 @@ impl<FMessage> FcmPushListener<FMessage>
 
     async fn connect_internal(&mut self) -> Result<(), Error> {
         // First check in to let GCM know the device is still functioning
-        gcm::check_in(Some(self.registration.gcm.android_id), Some(self.registration.gcm.security_token)).await?;
+        gcm::check_in(
+            Some(self.registration.gcm.android_id),
+            Some(self.registration.gcm.security_token),
+        )
+        .await?;
 
         let mut root_store = rustls::RootCertStore::empty();
-        root_store.add_server_trust_anchors(
-            webpki_roots::TLS_SERVER_ROOTS
-                .0
-                .iter()
-                .map(|ta| {
-                    rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
-                        ta.subject,
-                        ta.spki,
-                        ta.name_constraints,
-                    )
-                })
-        );
-    
+        root_store.add_server_trust_anchors(webpki_roots::TLS_SERVER_ROOTS.0.iter().map(|ta| {
+            rustls::OwnedTrustAnchor::from_subject_spki_name_constraints(
+                ta.subject,
+                ta.spki,
+                ta.name_constraints,
+            )
+        }));
+
         let config = rustls::ClientConfig::builder()
             .with_safe_defaults()
             .with_root_certificates(root_store)
             .with_no_client_auth();
-    
+
         let connector = TlsConnector::from(Arc::new(config));
-        let server_name = "mtalk.google.com".try_into().expect("Google talk server name should resolve");
-    
+        let server_name = "mtalk.google.com"
+            .try_into()
+            .expect("Google talk server name should resolve");
+
         let stream = TcpStream::connect("mtalk.google.com:5228").await?;
         let mut stream = connector.connect(server_name, stream).await?;
-    
+
         let login_request = self.create_login_request();
-    
+
         let initial_bytes: Vec<u8> = vec![MCS_VERSION, LOGIN_REQUEST_TAG];
         stream.write_all(&initial_bytes).await?;
-    
+
         // Login bytes are preceded by a varint indicating their length
         let login_request_bytes = login_request.encode_length_delimited_to_vec();
         stream.write_all(&login_request_bytes).await?;
-    
+
         // Buffer the reads to reduce sys calls
         let mut buffered_reader = BufReader::new(stream);
-    
+
         // Read the version
         buffered_reader.read_i8().await?;
-    
+
         // Read messages
         self.read_message_loop(buffered_reader).await?;
-    
+
         Ok(())
     }
 
-    async fn read_message_loop<'a>(&mut self, mut stream: BufReader<TlsStream<TcpStream>>) -> Result<(), Error> {
+    async fn read_message_loop<'a>(
+        &mut self,
+        mut stream: BufReader<TlsStream<TcpStream>>,
+    ) -> Result<(), Error> {
         loop {
             let tag: u8 = stream.read_u8().await?;
 
@@ -163,13 +173,16 @@ impl<FMessage> FcmPushListener<FMessage>
                     size_byte_shift += 7;
                 } else {
                     // No continuation bit. We're done determining the size.
-                    break
+                    break;
                 }
             }
 
             let mut payload_buffer = vec![0; size];
 
-            debug!("Push message listener read tag {} with payload size {}", tag, size);
+            debug!(
+                "Push message listener read tag {} with payload size {}",
+                tag, size
+            );
 
             stream.read_exact(&mut payload_buffer).await?;
 
@@ -184,23 +197,26 @@ impl<FMessage> FcmPushListener<FMessage>
 
                     if data_message.raw_data.is_some() {
                         let decrypt_result = self.decrypt_message(data_message)?;
-    
-                        let message = FcmMessage { payload_json: decrypt_result, persistent_id: persistent_id_2 };
+
+                        let message = FcmMessage {
+                            payload_json: decrypt_result,
+                            persistent_id: persistent_id_2,
+                        };
                         (self.message_callback)(message);
                     } else {
                         debug!("Received data message with empty raw_data");
                     }
-                },
+                }
                 HEARTBEAT_PING_TAG => {
                     stream.write_u8(HEARTBEAT_ACK_TAG).await?;
 
                     let heartbeat_ack = mcs::HeartbeatAck::default();
                     let heartbeat_ack_bytes = heartbeat_ack.encode_length_delimited_to_vec();
                     stream.write_all(&heartbeat_ack_bytes).await?;
-                },
+                }
                 LOGIN_RESPONSE_TAG => {
                     self.received_persistent_ids.clear();
-                },
+                }
                 _ => {}
             }
         }
@@ -210,38 +226,42 @@ impl<FMessage> FcmPushListener<FMessage>
 
     fn decrypt_message(&self, message: mcs::DataMessageStanza) -> Result<String, Error> {
         let raw_data = message.raw_data.ok_or(Error::MissingMessagePayload)?;
-    
-        let crypto_key = find_app_data(&message.app_data, "crypto-key").ok_or(Error::MissingCryptoMetadata)?;
-        let encryption = find_app_data(&message.app_data, "encryption").ok_or(Error::MissingCryptoMetadata)?;
-    
+
+        let crypto_key =
+            find_app_data(&message.app_data, "crypto-key").ok_or(Error::MissingCryptoMetadata)?;
+        let encryption =
+            find_app_data(&message.app_data, "encryption").ok_or(Error::MissingCryptoMetadata)?;
+
         // crypto_key is in the format dh=abc...
         let dh_bytes = URL_SAFE.decode(&crypto_key[3..])?;
-    
+
         // encryption is in the format salt=abc...
         let salt_bytes = URL_SAFE.decode(&encryption[5..])?;
-    
+
         let keys = &self.registration.keys;
-    
+
         let public_key_bytes = URL_SAFE_NO_PAD.decode(&keys.public_key)?;
         let private_key_bytes = URL_SAFE_NO_PAD.decode(&keys.private_key)?;
         let auth_secret_bytes = URL_SAFE_NO_PAD.decode(&keys.auth_secret)?;
-    
+
         let components = EcKeyComponents::new(private_key_bytes, public_key_bytes);
-    
+
         // The record size default is 4096 and doesn't seem to be overridden for FCM.
         let record_size: u32 = 4096;
-        let encrypted_block = ece::legacy::AesGcmEncryptedBlock::new(&dh_bytes, &salt_bytes, record_size, raw_data)?;
-        let data_bytes = ece::legacy::decrypt_aesgcm(&components, &auth_secret_bytes, &encrypted_block)?;
-    
+        let encrypted_block =
+            ece::legacy::AesGcmEncryptedBlock::new(&dh_bytes, &salt_bytes, record_size, raw_data)?;
+        let data_bytes =
+            ece::legacy::decrypt_aesgcm(&components, &auth_secret_bytes, &encrypted_block)?;
+
         let payload_json = String::from_utf8(data_bytes)?;
-    
+
         Ok(payload_json)
     }
 
     fn create_login_request(&self) -> mcs::LoginRequest {
         let android_id = self.registration.gcm.android_id;
         let device_id = format!("android-{:x}", android_id);
-    
+
         mcs::LoginRequest {
             adaptive_heartbeat: Some(false),
             auth_service: Some(2),
@@ -253,7 +273,10 @@ impl<FMessage> FcmPushListener<FMessage>
             resource: android_id.to_string(),
             user: android_id.to_string(),
             use_rmq2: Some(true),
-            setting: vec![mcs::Setting { name: "new_vc".to_owned(), value: "1".to_owned() }],
+            setting: vec![mcs::Setting {
+                name: "new_vc".to_owned(),
+                value: "1".to_owned(),
+            }],
             client_event: Vec::new(),
             received_persistent_id: self.received_persistent_ids.clone(),
             ..mcs::LoginRequest::default()
@@ -265,6 +288,6 @@ fn find_app_data(app_data_list: &[mcs::AppData], key: &str) -> Option<String> {
     let app_data = app_data_list.iter().find(|app_data| app_data.key == key);
     match app_data {
         None => None,
-        Some(app_data) => Some(String::from(&app_data.value))
+        Some(app_data) => Some(String::from(&app_data.value)),
     }
 }

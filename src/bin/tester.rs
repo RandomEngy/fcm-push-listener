@@ -1,8 +1,8 @@
 pub use fcm_push_listener::Error;
-use fcm_push_listener::Registration;
 use fcm_push_listener::GcmRegistration;
+use fcm_push_listener::Registration;
 use fcm_push_listener::WebPushKeys;
-use fcm_push_listener::{FcmPushListener, FcmMessage};
+use fcm_push_listener::{FcmMessage, FcmPushListener};
 use tokio::task::JoinHandle;
 
 pub mod checkin {
@@ -18,7 +18,7 @@ impl PushService {
     pub fn new() -> Self {
         PushService {
             task: None,
-            some_state: "abc".to_owned()
+            some_state: "abc".to_owned(),
         }
     }
 
@@ -30,24 +30,25 @@ impl PushService {
                 fcm_token: "abc".to_owned(),
                 gcm: GcmRegistration {
                     android_id: 123,
-                    security_token: 456
+                    security_token: 456,
                 },
                 keys: WebPushKeys {
                     auth_secret: "def".to_owned(),
                     private_key: "ghi".to_owned(),
                     public_key: "jkl".to_owned(),
-                }
+                },
             };
 
             let mut listener = FcmPushListener::create(
                 registration,
                 |message: FcmMessage| {
                     println!("Captured state: {}", some_state);
-        
+
                     println!("Message JSON: {}", message.payload_json);
                     println!("Persistent ID: {:?}", message.persistent_id);
                 },
-                vec![]);
+                vec![],
+            );
 
             let result = listener.connect().await;
             if let Err(err) = result {

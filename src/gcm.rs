@@ -1,6 +1,6 @@
 use prost::Message;
-use std::collections::HashMap;
 use reqwest::header::AUTHORIZATION;
+use std::collections::HashMap;
 
 use crate::Error;
 
@@ -14,9 +14,13 @@ pub struct CheckInResult {
 }
 
 /// Server key in URL-safe base64
-const SERVER_KEY: &str = "BDOU99-h67HcA6JeFXHbSNMu7e2yNNu3RzoMj8TM4W88jITfq7ZmPvIM1Iv-4_l2LxQcYwhqby2xGpWwzjfAnG4";
+const SERVER_KEY: &str =
+    "BDOU99-h67HcA6JeFXHbSNMu7e2yNNu3RzoMj8TM4W88jITfq7ZmPvIM1Iv-4_l2LxQcYwhqby2xGpWwzjfAnG4";
 
-pub async fn check_in(android_id: Option<i64>, security_token: Option<u64>) -> Result<CheckInResult, Error> {
+pub async fn check_in(
+    android_id: Option<i64>,
+    security_token: Option<u64>,
+) -> Result<CheckInResult, Error> {
     // Build up the request object
     let mut chrome_build = checkin::ChromeBuildProto::default();
     chrome_build.platform = Some(2);
@@ -40,14 +44,15 @@ pub async fn check_in(android_id: Option<i64>, security_token: Option<u64>) -> R
     // Send HTTP request
     let url = "https://android.clients.google.com/checkin";
     let client = reqwest::Client::new();
-    let result = client.post(url)
+    let result = client
+        .post(url)
         .body(buf)
         .header(reqwest::header::CONTENT_TYPE, "application/x-protobuf")
         .send()
         .await?;
 
     let response_bytes = result.bytes().await?;
-    
+
     // Deserialize via protobuf
     let response_object = checkin::AndroidCheckinResponse::decode(response_bytes)?;
 
@@ -55,18 +60,23 @@ pub async fn check_in(android_id: Option<i64>, security_token: Option<u64>) -> R
     let raw_android_id = if let Some(id) = response_object.android_id {
         id
     } else {
-        return Err(Error::InvalidResponse(String::from(url)))
+        return Err(Error::InvalidResponse(String::from(url)));
     };
 
-    let Ok(sanitized_android_id) = i64::try_from(raw_android_id) else { return Err(Error::InvalidResponse(String::from(url))) };
+    let Ok(sanitized_android_id) = i64::try_from(raw_android_id) else {
+        return Err(Error::InvalidResponse(String::from(url)));
+    };
 
     let security_token = if let Some(token) = response_object.security_token {
         token
     } else {
-        return Err(Error::InvalidResponse(String::from(url)))
+        return Err(Error::InvalidResponse(String::from(url)));
     };
 
-    Ok(CheckInResult { android_id: sanitized_android_id, security_token })
+    Ok(CheckInResult {
+        android_id: sanitized_android_id,
+        security_token,
+    })
 }
 
 fn serialize_checkin_request(request: &checkin::AndroidCheckinRequest) -> Vec<u8> {
@@ -90,9 +100,13 @@ pub async fn register(app_id: &str, android_id: i64, security_token: u64) -> Res
     let url = "https://android.clients.google.com/c2dm/register3";
 
     let client = reqwest::Client::new();
-    let result = client.post(url)
+    let result = client
+        .post(url)
         .form(&params)
-        .header(AUTHORIZATION, format!("AidLogin {android_id}:{security_token}"))
+        .header(
+            AUTHORIZATION,
+            format!("AidLogin {android_id}:{security_token}"),
+        )
         .send()
         .await?;
 
@@ -100,12 +114,12 @@ pub async fn register(app_id: &str, android_id: i64, security_token: u64) -> Res
     let response_parts: Vec<&str> = response_text.split("=").collect();
 
     if response_parts.len() < 2 {
-        return Err(Error::InvalidResponse(String::from(url)))
+        return Err(Error::InvalidResponse(String::from(url)));
     }
 
     let key = response_parts[0];
     if key == "Error" {
-        return Err(Error::ServerError(String::from(response_parts[1])))
+        return Err(Error::ServerError(String::from(response_parts[1])));
     }
 
     Ok(String::from(response_parts[1]))
