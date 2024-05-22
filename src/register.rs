@@ -49,15 +49,19 @@ pub async fn register(
     .await?;
 
     log::debug!("Getting Firebase installation token");
-    let firebase_installation_token =
-        firebase::get_installation(firebase_app_id, firebase_project_id, firebase_api_key).await?;
+    let firebase_installation_token = firebase::InstallationAuthToken::request(
+        firebase_app_id,
+        firebase_project_id,
+        firebase_api_key,
+    )
+    .await?;
 
     log::debug!("Calling FCM register");
     let fcm_register_result = fcm::Registration::request(
         firebase_project_id,
         firebase_api_key,
         vapid_key,
-        &firebase_installation_token,
+        &firebase_installation_token.value,
         &gcm_token,
     )
     .await?;
