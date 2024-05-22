@@ -1,21 +1,19 @@
-use base64::{Engine as _, engine::general_purpose::URL_SAFE_NO_PAD};
+use crate::Error;
 use serde::{Deserialize, Serialize};
 
-use crate::Error;
-
-pub struct FcmRegisterResult {
+pub struct Registration {
     pub fcm_token: String,
     pub keys: WebPushKeys,
 }
 
 #[derive(Serialize)]
-struct FcmRegisterRequest {
-    web: FcmRegisterRequestWeb,
+struct RegisterRequest {
+    web: WebRegistrationRequest,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct FcmRegisterRequestWeb {
+struct WebRegistrationRequest {
     application_pub_key: String,
     auth: String,
     endpoint: String,
@@ -23,15 +21,15 @@ struct FcmRegisterRequestWeb {
 }
 
 #[derive(Deserialize)]
-struct FcmRegisterResponse {
+struct RegisterResponse {
     // name: String,
     token: String,
-    // web: FcmRegisterResponseWeb,
+    // web: WebRegistrationResponse,
 }
 
 // #[derive(Deserialize)]
 // #[serde(rename_all = "camelCase")]
-// struct FcmRegisterResponseWeb {
+// struct WebRegistrationResponse {
 //     application_pub_key: String,
 //     auth: String,
 //     endpoint: String,
@@ -56,17 +54,17 @@ pub async fn register_fcm(
     application_pub_key: &str,
     firebase_installation_auth_token: &str,
     gcm_token: &str,
-) -> Result<FcmRegisterResult, Error> {
+) -> Result<Registration, Error> {
     let endpoint = format!("https://fcm.googleapis.com/fcm/send/{gcm_token}");
 
     let push_keys: WebPushKeys = create_key_pair()?;
 
-    let request = FcmRegisterRequest {
-        web: FcmRegisterRequestWeb {
-            application_pub_key: application_pub_key.to_owned(),
-            auth: push_keys.auth_secret.to_owned(),
-            endpoint: endpoint.to_owned(),
-            p256dh: push_keys.public_key.to_owned(),
+    let request = RegisterRequest {
+        web: WebRegistrationRequest {
+            application_pub_key: String::from(application_pub_key),
+            auth: push_keys.auth_secret.clone(),
+            endpoint: endpoint.clone(),
+            p256dh: push_keys.public_key.clone(),
         }
     };
 
@@ -79,15 +77,18 @@ pub async fn register_fcm(
         .send()
         .await?;
 
-    let response_object = response.json::<FcmRegisterResponse>().await?;
+    let response: RegisterResponse = response.json().await?;
 
-    Ok(FcmRegisterResult {
-        fcm_token: response_object.token,
+    Ok(Registration {
+        fcm_token: response.token,
         keys: push_keys
     })
 }
 
 fn create_key_pair() -> Result<WebPushKeys, ece::Error> {
+    use base64::engine::Engine;
+    use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+
     let (keypair, auth_secret) = ece::generate_keypair_and_auth_secret()?;
 
     let components = keypair.raw_components()?;
