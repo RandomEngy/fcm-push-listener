@@ -59,10 +59,7 @@ impl DataMessage {
         let message = crate::mcs::DataMessageStanza::decode(bytes)?;
         let bytes = match message.raw_data {
             Some(v) => v,
-            None => {
-                log::debug!("Ignoring FCM message with no content");
-                return Err(Error::MissingMessagePayload);
-            }
+            None => return Err(Error::MissingMessagePayload),
         };
 
         let mut kex: Vec<u8> = Vec::default();
@@ -85,6 +82,12 @@ impl DataMessage {
                 }
                 _ => {}
             }
+        }
+
+        if kex.is_empty() {
+            return Err(Error::MissingCryptoMetadata("crypto-key"));
+        } else if salt.is_empty() {
+            return Err(Error::MissingCryptoMetadata("encryption"));
         }
 
         // The record size default is 4096 and doesn't seem to be overridden for FCM.

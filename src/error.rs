@@ -7,9 +7,10 @@ pub enum Error {
     DependencyFailure(&'static str, &'static str),
     /// Dependency rejection, i.e. they blame us
     DependencyRejection(&'static str, String),
-
+    /// Received a message with no contents
     MissingMessagePayload,
-    MissingCryptoMetadata,
+    /// Received an encrypted message with no decryption params
+    MissingCryptoMetadata(&'static str),
     ProtobufDecode(prost::DecodeError),
     Base64Decode(base64::DecodeError),
     FromUtf8(FromUtf8Error),
@@ -63,8 +64,8 @@ impl fmt::Display for Error {
             Self::DependencyRejection(api, reason) => {
                 write!(f, "{api} API rejected request: {reason}")
             }
-            Error::MissingMessagePayload => write!(f, "Message payload is missing"),
-            Error::MissingCryptoMetadata => write!(f, "Missing crypto metadata on message"),
+            Self::MissingMessagePayload => write!(f, "Message payload is missing"),
+            Self::MissingCryptoMetadata(kind) => write!(f, "Missing {kind} metadata on message"),
             Error::ProtobufDecode(..) => write!(f, "Error decoding response"),
             Error::Base64Decode(..) => write!(f, "Error decoding base64 string"),
             Error::FromUtf8(..) => write!(f, "Error getting string from UTF8"),
@@ -83,7 +84,7 @@ impl error::Error for Error {
             Self::DependencyFailure(_, _) => None,
             Self::DependencyRejection(_, _) => None,
             Error::MissingMessagePayload => None,
-            Error::MissingCryptoMetadata => None,
+            Error::MissingCryptoMetadata(_) => None,
             Error::ProtobufDecode(ref e) => Some(e),
             Error::Base64Decode(ref e) => Some(e),
             Error::FromUtf8(ref e) => Some(e),
