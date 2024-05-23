@@ -46,5 +46,5 @@ async fn main() {
 
     println!("Listening for push messages. Press any key to exit");
     let mut buf = [0u8; 1];
-    std::io::stdin().read(&mut buf).expect("read error");
+    let _ = std::io::stdin().read(&mut buf).expect("read error");
 }

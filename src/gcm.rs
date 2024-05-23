@@ -45,7 +45,6 @@ impl Session {
                     platform: Some(2),
                     channel: Some(1),
                     chrome_version: Some(String::from("63.0.3234.0")),
-                    ..Default::default()
                 }),
                 ..Default::default()
             },
@@ -112,7 +111,7 @@ impl Session {
             .await?;
 
         let response_text = result.text().await?;
-        let mut tokens = response_text.split("=");
+        let mut tokens = response_text.split('=');
 
         const API_NAME: &str = "GCM registration";
         const ERR_EOF: Error = Error::DependencyFailure(API_NAME, "malformed response");
@@ -196,7 +195,7 @@ impl CheckedSession {
         let tls = new_tls_initiator();
         let mut stream = tls.connect(domain, stream).await?;
 
-        stream.write_all(&login_bytes).await?;
+        stream.write_all(login_bytes).await?;
 
         // Read the version
         stream.read_i8().await?;

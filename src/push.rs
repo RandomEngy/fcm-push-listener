@@ -155,7 +155,7 @@ impl<T> MessageStream<T> {
             let value_part = byte & !0x80u8;
 
             // accumulate little endian bits
-            result += (value_part as usize) << bytes_read * 7;
+            result += (value_part as usize) << (bytes_read * 7);
 
             // IFF equal -> No continuation bit -> Varint has concluded
             if value_part.eq(byte) {
