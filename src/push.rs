@@ -110,7 +110,7 @@ pin_project! {
 }
 
 impl<T> MessageStream<T> {
-    fn new(inner: T, keys: &crate::fcm::WebPushKeys) -> Result<Self, Error> {
+    pub fn new(inner: T, keys: &crate::fcm::WebPushKeys) -> Result<Self, Error> {
         use base64::engine::general_purpose::URL_SAFE_NO_PAD;
         use base64::Engine;
 
