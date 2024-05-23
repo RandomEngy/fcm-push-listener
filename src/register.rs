@@ -14,7 +14,7 @@ pub async fn register(
     firebase_app_id: &str,
     firebase_project_id: &str,
     firebase_api_key: &str,
-    vapid_key: &str,
+    vapid_key: Option<&str>,
 ) -> Result<Registration, Error> {
     log::debug!("Checking in to GCM");
     let gcm_session = gcm::Session::create(None, None).await?;

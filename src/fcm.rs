@@ -10,7 +10,7 @@ impl Registration {
     pub async fn request(
         project_id: &str,
         api_key: &str,
-        application_pub_key: &str,
+        application_pub_key: Option<&str>,
         firebase_installation_auth_token: &str,
         gcm_token: &str,
     ) -> Result<Self, Error> {
@@ -56,7 +56,7 @@ struct RegisterRequest<'a> {
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 struct WebRegistrationRequest<'a> {
-    application_pub_key: &'a str,
+    application_pub_key: Option<&'a str>,
     auth: &'a str,
     endpoint: &'a str,
     p256dh: &'a str,
