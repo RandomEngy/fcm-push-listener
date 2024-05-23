@@ -1,23 +1,17 @@
-use base64::{
-    engine::general_purpose::{URL_SAFE, URL_SAFE_NO_PAD},
-    Engine as _,
-};
+pub mod mcs {
+    include!(concat!(env!("OUT_DIR"), "/mcs_proto.rs"));
+}
+
+use crate::{gcm, Error, Registration};
+
 use ece::EcKeyComponents;
-use log::{debug, warn};
-use prost::Message;
+use std::sync::Arc;
 use std::time::Instant;
-use std::{str, sync::Arc};
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
 use tokio_rustls::{client::TlsStream, rustls, TlsConnector};
 
-use crate::{gcm, Error, Registration};
-
 const MCS_VERSION: u8 = 41;
-
-pub mod mcs {
-    include!(concat!(env!("OUT_DIR"), "/mcs_proto.rs"));
-}
 
 // Message tags, for reference
 //     HeartbeatPing       = 0,
@@ -83,12 +77,14 @@ where
                 return result;
             }
 
-            warn!("Connection failed. Retrying.");
+            log::warn!("Connection failed. Retrying.");
             // Otherwise, try to connect again.
         }
     }
 
     async fn connect_internal(&mut self) -> Result<(), Error> {
+        use prost::Message;
+
         // First check in to let GCM know the device is still functioning
         gcm::Session::create(
             Some(self.registration.gcm.android_id),
@@ -143,6 +139,8 @@ where
         &mut self,
         mut stream: BufReader<TlsStream<TcpStream>>,
     ) -> Result<(), Error> {
+        use prost::Message;
+
         loop {
             let tag: u8 = stream.read_u8().await?;
 
@@ -179,9 +177,10 @@ where
 
             let mut payload_buffer = vec![0; size];
 
-            debug!(
+            log::debug!(
                 "Push message listener read tag {} with payload size {}",
-                tag, size
+                tag,
+                size
             );
 
             stream.read_exact(&mut payload_buffer).await?;
@@ -204,7 +203,7 @@ where
                         };
                         (self.message_callback)(message);
                     } else {
-                        debug!("Received data message with empty raw_data");
+                        log::debug!("Received data message with empty raw_data");
                     }
                 }
                 HEARTBEAT_PING_TAG => {
@@ -225,6 +224,9 @@ where
     }
 
     fn decrypt_message(&self, message: mcs::DataMessageStanza) -> Result<String, Error> {
+        use base64::engine::general_purpose::{URL_SAFE, URL_SAFE_NO_PAD};
+        use base64::Engine;
+
         let raw_data = message.raw_data.ok_or(Error::MissingMessagePayload)?;
 
         let crypto_key =
