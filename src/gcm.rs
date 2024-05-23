@@ -165,7 +165,10 @@ impl CheckedSession {
         self.0.security_token != from.security_token || self.0.android_id != from.android_id
     }
 
-    fn new_mcs_login_request(&self) -> crate::mcs::LoginRequest {
+    fn new_mcs_login_request(
+        &self,
+        received_persistent_id: Vec<String>,
+    ) -> crate::mcs::LoginRequest {
         let android_id = self.0.android_id.to_string();
         crate::mcs::LoginRequest {
             adaptive_heartbeat: Some(false),
@@ -182,7 +185,7 @@ impl CheckedSession {
                 name: "new_vc".into(),
                 value: "1".into(),
             }],
-            client_event: Vec::new(),
+            received_persistent_id,
             ..Default::default()
         }
     }
@@ -201,7 +204,10 @@ impl CheckedSession {
         Ok(Connection(stream))
     }
 
-    pub async fn new_connection(&self) -> Result<Connection, Error> {
+    pub async fn new_connection(
+        &self,
+        received_persistent_id: Vec<String>,
+    ) -> Result<Connection, Error> {
         use prost::Message;
 
         const ERR_RESOLVE: Error =
@@ -209,7 +215,7 @@ impl CheckedSession {
 
         let domain = ServerName::try_from("mtalk.google.com").or(Err(ERR_RESOLVE))?;
 
-        let login_request = self.new_mcs_login_request();
+        let login_request = self.new_mcs_login_request(received_persistent_id);
 
         let mut login_bytes = bytes::BytesMut::with_capacity(2 + login_request.encoded_len() + 4);
         login_bytes.put_u8(Self::MCS_VERSION);
