@@ -1,6 +1,6 @@
 pub use fcm_push_listener::Error;
-use fcm_push_listener::GcmRegistration;
 use fcm_push_listener::Registration;
+use fcm_push_listener::Session as GcmSession;
 use fcm_push_listener::WebPushKeys;
 use fcm_push_listener::{FcmMessage, FcmPushListener};
 use tokio::task::JoinHandle;
@@ -28,7 +28,7 @@ impl PushService {
         self.task = Some(tokio::task::spawn(async move {
             let registration = Registration {
                 fcm_token: "abc".to_owned(),
-                gcm: GcmRegistration {
+                gcm: GcmSession {
                     android_id: 123,
                     security_token: 456,
                 },

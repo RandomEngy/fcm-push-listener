@@ -7,8 +7,8 @@ mod register;
 
 pub use error::Error;
 pub use fcm::WebPushKeys;
+pub use gcm::Session;
 pub use listener::FcmMessage;
 pub use listener::FcmPushListener;
 pub use register::register;
-pub use register::GcmRegistration;
 pub use register::Registration;

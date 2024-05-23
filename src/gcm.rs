@@ -1,4 +1,10 @@
+pub mod contract {
+    include!(concat!(env!("OUT_DIR"), "/checkin_proto.rs"));
+}
+
 use crate::Error;
+use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
 
 fn require_some<T>(value: Option<T>, reason: &'static str) -> Result<T, Error> {
     match value {
@@ -8,18 +14,22 @@ fn require_some<T>(value: Option<T>, reason: &'static str) -> Result<T, Error> {
 }
 
 const CHECKIN_URL: &str = "https://android.clients.google.com/checkin";
+const REGISTER_URL: &str = "https://android.clients.google.com/c2dm/register3";
 
-pub mod contract {
-    include!(concat!(env!("OUT_DIR"), "/checkin_proto.rs"));
-}
-
-pub struct CheckIn {
+// Normal JSON serialization will lose precision and change the number, so we must
+// force the i64/u64 to serialize to string.
+#[serde_as]
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Session {
+    #[serde_as(as = "serde_with::DisplayFromStr")]
     pub android_id: i64,
+
+    #[serde_as(as = "serde_with::DisplayFromStr")]
     pub security_token: u64,
 }
 
-impl CheckIn {
-    pub async fn request(
+impl Session {
+    pub async fn create(
         android_id: Option<i64>,
         security_token: Option<u64>,
     ) -> Result<Self, Error> {
@@ -71,49 +81,46 @@ impl CheckIn {
             security_token,
         })
     }
-}
 
-const REGISTER_URL: &str = "https://android.clients.google.com/c2dm/register3";
+    pub async fn request_token(&self, app_id: &str) -> Result<String, Error> {
+        /// Server key in URL-safe base64
+        const SERVER_KEY: &str =
+            "BDOU99-h67HcA6JeFXHbSNMu7e2yNNu3RzoMj8TM4W88jITfq7ZmPvIM1Iv-4_l2LxQcYwhqby2xGpWwzjfAnG4";
 
-/// Server key in URL-safe base64
-const SERVER_KEY: &str =
-    "BDOU99-h67HcA6JeFXHbSNMu7e2yNNu3RzoMj8TM4W88jITfq7ZmPvIM1Iv-4_l2LxQcYwhqby2xGpWwzjfAnG4";
+        let android_id = self.android_id.to_string();
+        let auth_header = format!("AidLogin {}:{}", &android_id, &self.security_token);
+        let mut params = std::collections::HashMap::with_capacity(4);
+        params.insert("app", "org.chromium.linux");
+        params.insert("X-subtype", app_id);
+        params.insert("device", &android_id);
+        params.insert("sender", SERVER_KEY);
 
-pub async fn register(app_id: &str, checkin: &CheckIn) -> Result<String, Error> {
-    let android_id = checkin.android_id.to_string();
-    let security_token = &checkin.security_token;
-    let auth_header = format!("AidLogin {android_id}:{security_token}");
-    let mut params = std::collections::HashMap::with_capacity(4);
-    params.insert("app", "org.chromium.linux");
-    params.insert("X-subtype", app_id);
-    params.insert("device", &android_id);
-    params.insert("sender", SERVER_KEY);
+        let result = reqwest::Client::new()
+            .post(REGISTER_URL)
+            .form(&params)
+            .header(reqwest::header::AUTHORIZATION, auth_header)
+            .send()
+            .await?;
 
-    let result = reqwest::Client::new()
-        .post(REGISTER_URL)
-        .form(&params)
-        .header(reqwest::header::AUTHORIZATION, auth_header)
-        .send()
-        .await?;
+        let response_text = result.text().await?;
+        let mut tokens = response_text.split("=");
 
-    let response_text = result.text().await?;
-    let mut tokens = response_text.split("=");
-
-    const API_NAME: &str = "GCM registration";
-    const ERR_EOF: Error = Error::DependencyFailure(API_NAME, "malformed response");
-    match tokens.next() {
-        Some("Error") => {
-            return Err(Error::DependencyRejection(
-                API_NAME,
-                tokens.next().unwrap_or("no reasons given").into(),
-            ))
+        const API_NAME: &str = "GCM registration";
+        const ERR_EOF: Error = Error::DependencyFailure(API_NAME, "malformed response");
+        match tokens.next() {
+            Some("Error") => {
+                return Err(Error::DependencyRejection(
+                    API_NAME,
+                    tokens.next().unwrap_or("no reasons given").into(),
+                ))
+            }
+            None => return Err(ERR_EOF),
+            _ => {}
         }
-        None => return Err(ERR_EOF),
-        _ => {}
-    }
 
-    match tokens.next() {
-        Some(v) => Ok(String::from(v)),
-        None => Err(ERR_EOF),
+        match tokens.next() {
+            Some(v) => Ok(String::from(v)),
+            None => Err(ERR_EOF),
+        }
     }
 }
