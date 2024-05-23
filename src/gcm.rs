@@ -81,7 +81,7 @@ impl Session {
     }
 
     /// check in to the device registration service, possibly obtaining a new security token
-    pub async fn checkin(&mut self) -> Result<CheckedSession, Error> {
+    pub async fn checkin(&self) -> Result<CheckedSession, Error> {
         let r = Self::request(Some(self.android_id), Some(self.security_token)).await?;
         Ok(CheckedSession(r))
     }
@@ -242,4 +242,4 @@ impl std::ops::Deref for CheckedSession {
     }
 }
 
-pub struct Connection(tokio_rustls::client::TlsStream<tokio::net::TcpStream>);
+pub struct Connection(pub(crate) tokio_rustls::client::TlsStream<tokio::net::TcpStream>);

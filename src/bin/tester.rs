@@ -2,15 +2,24 @@ pub use fcm_push_listener::Error;
 use fcm_push_listener::{MessageStream, Registration, Session as GcmSession, WebPushKeys};
 
 async fn run(registration: Registration) -> Result<(), fcm_push_listener::Error> {
+    use tokio_stream::StreamExt;
+
     let session = registration.gcm.checkin().await?;
     let connection = session.new_connection().await?;
-    let stream = MessageStream::new(connection, &registration.keys)?;
+    let mut stream = MessageStream::wrap(connection, &registration.keys)?;
 
     while let Some(message) = stream.next().await {
-        println!("Captured state: {}", some_state);
-
-        println!("Message JSON: {}", message.payload_json);
-        println!("Persistent ID: {:?}", message.persistent_id);
+        match message? {
+            fcm_push_listener::Message::Data(d) => {
+                println!("Message {:?} JSON: {:?}", d.persistent_id, d.body);
+            }
+            fcm_push_listener::Message::HeartbeatPing => {
+                println!("heartbeat");
+            }
+            fcm_push_listener::Message::Other(tag, bytes) => {
+                println!("Unrecognized tag: {tag:?}, {bytes:?}");
+            }
+        }
     }
 
     Ok(())
@@ -36,6 +45,6 @@ async fn main() {
     tokio::spawn(run(registration));
 
     println!("Listening for push messages. Press any key to exit");
-    let buf = [0u8; 1];
+    let mut buf = [0u8; 1];
     std::io::stdin().read(&mut buf).expect("read error");
 }

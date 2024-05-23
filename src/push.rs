@@ -6,7 +6,7 @@ use std::pin::Pin;
 use std::task::{Context, Poll};
 
 #[allow(dead_code)]
-#[derive(PartialEq)]
+#[derive(PartialEq, Debug)]
 pub enum MessageTag {
     Unknown = !0,
     HeartbeatPing = 0,
@@ -109,8 +109,17 @@ pin_project! {
     }
 }
 
+impl MessageStream<tokio_rustls::client::TlsStream<tokio::net::TcpStream>> {
+    pub fn wrap(
+        connection: crate::gcm::Connection,
+        keys: &crate::fcm::WebPushKeys,
+    ) -> Result<Self, Error> {
+        Self::new(connection.0, keys)
+    }
+}
+
 impl<T> MessageStream<T> {
-    pub fn new(inner: T, keys: &crate::fcm::WebPushKeys) -> Result<Self, Error> {
+    fn new(inner: T, keys: &crate::fcm::WebPushKeys) -> Result<Self, Error> {
         use base64::engine::general_purpose::URL_SAFE_NO_PAD;
         use base64::Engine;
 

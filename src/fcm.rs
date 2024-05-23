@@ -18,7 +18,7 @@ impl Registration {
         let push_keys = WebPushKeys::new()?;
         let request = RegisterRequest {
             web: WebRegistrationRequest {
-                application_pub_key: application_pub_key,
+                application_pub_key,
                 auth: &push_keys.auth_secret,
                 endpoint: &endpoint,
                 p256dh: &push_keys.public_key,
