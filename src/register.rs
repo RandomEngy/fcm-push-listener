@@ -1,18 +1,13 @@
+use crate::{fcm, firebase, gcm, Error};
 use serde::Deserialize;
 use serde::Serialize;
 use uuid::Uuid;
 
-use crate::fcm;
-use crate::fcm::WebPushKeys;
-use crate::firebase;
-use crate::gcm;
-use crate::Error;
-
 #[derive(Clone, Serialize, Deserialize)]
 pub struct Registration {
-    pub gcm: gcm::Session,
     pub fcm_token: String,
-    pub keys: WebPushKeys,
+    pub gcm: gcm::Session,
+    pub keys: fcm::WebPushKeys,
 }
 
 pub async fn register(
