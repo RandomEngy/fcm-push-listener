@@ -17,7 +17,7 @@ pub async fn register(
     vapid_key: Option<&str>,
 ) -> Result<Registration, Error> {
     log::debug!("Checking in to GCM");
-    let gcm_session = gcm::Session::create(None, None).await?;
+    let gcm_session = gcm::Session::create().await?;
 
     let id = Uuid::new_v4();
     let gcm_app_id = format!("wp:receiver.push.com#{id}");
