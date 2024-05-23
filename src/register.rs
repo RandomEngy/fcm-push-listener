@@ -35,18 +35,13 @@ pub async fn register(
     vapid_key: &str,
 ) -> Result<Registration, Error> {
     log::debug!("Checking in to GCM");
-    let checkin_result: gcm::CheckInResult = gcm::check_in(None, None).await?;
+    let checkin_result = gcm::CheckIn::request(None, None).await?;
 
     let id = Uuid::new_v4();
     let gcm_app_id = format!("wp:receiver.push.com#{id}");
 
     log::debug!("Registering to GCM");
-    let gcm_token = gcm::register(
-        &gcm_app_id,
-        checkin_result.android_id,
-        checkin_result.security_token,
-    )
-    .await?;
+    let gcm_token = gcm::register(&gcm_app_id, &checkin_result).await?;
 
     log::debug!("Getting Firebase installation token");
     let firebase_installation_token = firebase::InstallationAuthToken::request(

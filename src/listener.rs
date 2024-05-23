@@ -90,7 +90,7 @@ where
 
     async fn connect_internal(&mut self) -> Result<(), Error> {
         // First check in to let GCM know the device is still functioning
-        gcm::check_in(
+        gcm::CheckIn::request(
             Some(self.registration.gcm.android_id),
             Some(self.registration.gcm.security_token),
         )
