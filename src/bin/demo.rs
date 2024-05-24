@@ -6,7 +6,7 @@ async fn run(registration: Registration) -> Result<(), fcm_push_listener::Error>
 
     let session = registration.gcm.checkin().await?;
     let connection = session.new_connection(vec![]).await?;
-    let mut stream = MessageStream::wrap(connection, &registration.keys)?;
+    let mut stream = MessageStream::wrap(connection, &registration.keys);
 
     while let Some(message) = stream.next().await {
         match message? {
@@ -36,9 +36,9 @@ async fn main() {
             security_token: 456,
         },
         keys: WebPushKeys {
-            auth_secret: "def".to_owned(),
-            private_key: "ghi".to_owned(),
-            public_key: "jkl".to_owned(),
+            auth_secret: vec![],
+            private_key: vec![],
+            public_key: vec![],
         },
     };
 
