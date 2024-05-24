@@ -113,29 +113,20 @@ pin_project! {
 }
 
 impl MessageStream<tokio_rustls::client::TlsStream<tokio::net::TcpStream>> {
-    pub fn wrap(
-        connection: crate::gcm::Connection,
-        keys: &crate::fcm::WebPushKeys,
-    ) -> Result<Self, Error> {
+    pub fn wrap(connection: crate::gcm::Connection, keys: &crate::fcm::WebPushKeys) -> Self {
         Self::new(connection.0, keys)
     }
 }
 
 impl<T> MessageStream<T> {
-    fn new(inner: T, keys: &crate::fcm::WebPushKeys) -> Result<Self, Error> {
-        use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-        use base64::Engine;
-
-        let public_key = URL_SAFE_NO_PAD.decode(&keys.public_key)?;
-        let private_key = URL_SAFE_NO_PAD.decode(&keys.private_key)?;
-
-        Ok(Self {
+    fn new(inner: T, keys: &crate::fcm::WebPushKeys) -> Self {
+        Self {
             inner,
-            eckey: EcKeyComponents::new(private_key, public_key),
-            auth_secret: URL_SAFE_NO_PAD.decode(&keys.auth_secret)?,
+            eckey: EcKeyComponents::new(keys.private_key.clone(), keys.public_key.clone()),
+            auth_secret: keys.auth_secret.clone(),
             bytes_required: 2,
             receive_buffer: BytesMut::with_capacity(1024),
-        })
+        }
     }
 
     /// returns a decoded protobuf varint or a state change if there is insufficient data

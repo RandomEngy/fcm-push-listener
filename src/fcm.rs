@@ -19,8 +19,8 @@ impl Registration {
         let request = RegisterRequest {
             web: WebRegistrationRequest {
                 application_pub_key,
-                auth: &push_keys.auth_secret,
                 endpoint: &endpoint,
+                auth: &push_keys.auth_secret,
                 p256dh: &push_keys.public_key,
             },
         };
@@ -57,9 +57,13 @@ struct RegisterRequest<'a> {
 #[serde(rename_all = "camelCase")]
 struct WebRegistrationRequest<'a> {
     application_pub_key: Option<&'a str>,
-    auth: &'a str,
     endpoint: &'a str,
-    p256dh: &'a str,
+
+    #[serde(serialize_with = "crate::to_base64")]
+    auth: &'a [u8],
+
+    #[serde(serialize_with = "crate::to_base64")]
+    p256dh: &'a [u8],
 }
 
 #[derive(Deserialize)]
@@ -81,26 +85,26 @@ struct RegisterResponse {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct WebPushKeys {
     /// Public key with URL safe base64 encoding, no padding
-    pub public_key: String,
+    #[serde(deserialize_with = "crate::from_base64")]
+    pub public_key: Vec<u8>,
 
     /// Private key with URL safe base64 encoding, no padding
-    pub private_key: String,
+    #[serde(deserialize_with = "crate::from_base64")]
+    pub private_key: Vec<u8>,
 
     /// Generated random auth secret, with URL safe base64 encoding, no padding
-    pub auth_secret: String,
+    #[serde(deserialize_with = "crate::from_base64")]
+    pub auth_secret: Vec<u8>,
 }
 
 impl WebPushKeys {
     fn new() -> Result<Self, ece::Error> {
-        use base64::engine::general_purpose::URL_SAFE_NO_PAD;
-        use base64::engine::Engine;
-
         let (key_pair, auth_secret) = ece::generate_keypair_and_auth_secret()?;
         let components = key_pair.raw_components()?;
         Ok(WebPushKeys {
-            public_key: URL_SAFE_NO_PAD.encode(components.public_key()),
-            private_key: URL_SAFE_NO_PAD.encode(components.private_key()),
-            auth_secret: URL_SAFE_NO_PAD.encode(auth_secret),
+            public_key: components.public_key().into(),
+            private_key: components.private_key().into(),
+            auth_secret: auth_secret.into(),
         })
     }
 }
