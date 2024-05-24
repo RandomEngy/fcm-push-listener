@@ -32,7 +32,7 @@ fn from_base64<'de, D: serde::de::Deserializer<'de>>(
     use serde::de::Deserialize;
 
     <&str>::deserialize(deserializer).and_then(|s| {
-        base64::engine::general_purpose::STANDARD
+        base64::engine::general_purpose::URL_SAFE_NO_PAD
             .decode(s)
             .map_err(serde::de::Error::custom)
     })
