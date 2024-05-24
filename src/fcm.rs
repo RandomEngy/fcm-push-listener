@@ -1,6 +1,25 @@
 use crate::Error;
 use serde::{Deserialize, Serialize};
 
+fn to_base64<S: serde::ser::Serializer>(v: &[u8], serializer: S) -> Result<S::Ok, S::Error> {
+    use base64::Engine;
+
+    let str = base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(v);
+    serializer.serialize_str(&str)
+}
+
+fn from_base64<'de, D: serde::de::Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<Vec<u8>, D::Error> {
+    use base64::Engine;
+
+    <&str>::deserialize(deserializer).and_then(|s| {
+        base64::engine::general_purpose::URL_SAFE_NO_PAD
+            .decode(s)
+            .map_err(serde::de::Error::custom)
+    })
+}
+
 pub struct Registration {
     pub fcm_token: String,
     pub keys: WebPushKeys,
@@ -59,10 +78,10 @@ struct WebRegistrationRequest<'a> {
     application_pub_key: Option<&'a str>,
     endpoint: &'a str,
 
-    #[serde(serialize_with = "crate::to_base64")]
+    #[serde(serialize_with = "to_base64")]
     auth: &'a [u8],
 
-    #[serde(serialize_with = "crate::to_base64")]
+    #[serde(serialize_with = "to_base64")]
     p256dh: &'a [u8],
 }
 
@@ -85,15 +104,15 @@ struct RegisterResponse {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct WebPushKeys {
     /// Public key with URL safe base64 encoding, no padding
-    #[serde(deserialize_with = "crate::from_base64")]
+    #[serde(deserialize_with = "from_base64")]
     pub public_key: Vec<u8>,
 
     /// Private key with URL safe base64 encoding, no padding
-    #[serde(deserialize_with = "crate::from_base64")]
+    #[serde(deserialize_with = "from_base64")]
     pub private_key: Vec<u8>,
 
     /// Generated random auth secret, with URL safe base64 encoding, no padding
-    #[serde(deserialize_with = "crate::from_base64")]
+    #[serde(deserialize_with = "from_base64")]
     pub auth_secret: Vec<u8>,
 }
 
