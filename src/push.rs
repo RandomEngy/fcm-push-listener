@@ -241,6 +241,20 @@ where
     }
 }
 
+impl<T> std::ops::Deref for MessageStream<T> {
+    type Target = T;
+
+    fn deref(&self) -> &Self::Target {
+        &self.inner
+    }
+}
+
+impl<T> std::ops::DerefMut for MessageStream<T> {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.inner
+    }
+}
+
 pub fn new_heartbeat_ack() -> BytesMut {
     use bytes::BufMut;
 

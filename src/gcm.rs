@@ -236,3 +236,17 @@ impl std::ops::Deref for CheckedSession {
 }
 
 pub struct Connection(pub(crate) tokio_rustls::client::TlsStream<tokio::net::TcpStream>);
+
+impl std::ops::Deref for Connection {
+    type Target = tokio_rustls::client::TlsStream<tokio::net::TcpStream>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for Connection {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
+}

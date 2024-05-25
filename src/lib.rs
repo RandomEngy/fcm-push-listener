@@ -12,6 +12,8 @@ mod register;
 pub use error::Error;
 pub use fcm::WebPushKeys;
 pub use gcm::Session;
+pub use push::new_heartbeat_ack;
+pub use push::DataMessage;
 pub use push::Message;
 pub use push::MessageStream;
 pub use push::MessageTag;
