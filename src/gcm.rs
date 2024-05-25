@@ -223,19 +223,7 @@ impl CheckedSession {
             .encode_length_delimited(&mut login_bytes)
             .expect("login request encoding failure");
 
-        loop {
-            let start = std::time::Instant::now();
-            let result = Self::try_connect(domain.clone(), &login_bytes).await;
-            let elapsed = start.elapsed();
-
-            // If we quickly disconnected, propagate the error
-            if elapsed.as_secs() < 20 {
-                return result;
-            }
-
-            // Otherwise, try to connect again.
-            log::warn!("Connection failed. Retrying.");
-        }
+        Self::try_connect(domain.clone(), &login_bytes).await
     }
 }
 
