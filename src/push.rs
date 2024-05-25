@@ -185,6 +185,11 @@ where
                 let (size, offset) = Self::try_read_varint(bytes);
                 let bytes_required = offset + size;
                 if bytes_required <= self.receive_buffer.len() {
+                    // sizeof next_message is unknown, if sizeof next_message < sizeof this_message
+                    // && we don't resetting expectations -> we block despite having received the
+                    // smaller message in its entirety
+                    self.bytes_required = 2;
+
                     self.receive_buffer.advance(offset);
                     let bytes = self.receive_buffer.split_to(size);
                     return Poll::Ready(Some(Ok(match tag {
