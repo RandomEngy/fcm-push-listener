@@ -8,7 +8,6 @@ use std::task::{Context, Poll};
 #[allow(dead_code)]
 #[derive(PartialEq, Debug)]
 pub enum MessageTag {
-    Unknown = !0,
     HeartbeatPing = 0,
     HeartbeatAck,
     LoginRequest,
@@ -28,12 +27,14 @@ pub enum MessageTag {
     NumProtoTypes,
 }
 
-impl From<u8> for MessageTag {
-    fn from(value: u8) -> Self {
-        if value <= Self::NumProtoTypes as u8 {
-            unsafe { std::mem::transmute(value) }
+impl TryFrom<u8> for MessageTag {
+    type Error = u8;
+
+    fn try_from(value: u8) -> std::result::Result<Self, Self::Error> {
+        if value < Self::NumProtoTypes as u8 {
+            Ok(unsafe { std::mem::transmute(value) })
         } else {
-            MessageTag::Unknown
+            Err(value)
         }
     }
 }
@@ -41,7 +42,7 @@ impl From<u8> for MessageTag {
 pub enum Message {
     HeartbeatPing,
     Data(DataMessage),
-    Other(MessageTag, Bytes),
+    Other(u8, Bytes),
 }
 
 pub struct DataMessage {
@@ -172,8 +173,9 @@ where
         loop {
             let mut bytes = self.receive_buffer.iter();
             if let Some(tag_value) = bytes.next() {
-                let tag = MessageTag::from(*tag_value);
-                if tag == MessageTag::Close {
+                let tag_value = *tag_value;
+                let tag = MessageTag::try_from(tag_value);
+                if matches!(tag, Ok(MessageTag::Close)) {
                     self.bytes_required = 0;
                     self.receive_buffer.clear();
                     return Poll::Ready(None);
@@ -186,14 +188,14 @@ where
                     self.receive_buffer.advance(offset);
                     let bytes = self.receive_buffer.split_to(size);
                     return Poll::Ready(Some(Ok(match tag {
-                        MessageTag::DataMessageStanza => {
+                        Ok(MessageTag::DataMessageStanza) => {
                             match DataMessage::decode(&self.eckey, &self.auth_secret, &bytes) {
                                 Err(e) => return Poll::Ready(Some(Err(e))),
                                 Ok(m) => Message::Data(m),
                             }
                         }
-                        MessageTag::HeartbeatPing => Message::HeartbeatPing,
-                        tag => Message::Other(tag, bytes.into()),
+                        Ok(MessageTag::HeartbeatPing) => Message::HeartbeatPing,
+                        _ => Message::Other(tag_value, bytes.into()),
                     })));
                 }
 
