@@ -60,7 +60,10 @@ impl DataMessage {
         let message = crate::mcs::DataMessageStanza::decode(bytes)?;
         let bytes = match message.raw_data {
             Some(v) => v,
-            None => return Err(Error::MissingMessagePayload),
+            None => {
+                const ERR: &str = "sent a data message with no payload";
+                return Err(Error::DependencyFailure("FCM notification", ERR));
+            }
         };
 
         let mut kex: Vec<u8> = Vec::default();

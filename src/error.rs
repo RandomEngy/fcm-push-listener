@@ -1,5 +1,4 @@
 use std::error;
-use std::{fmt, string::FromUtf8Error};
 
 #[derive(Debug)]
 pub enum Error {
@@ -7,15 +6,10 @@ pub enum Error {
     DependencyFailure(&'static str, &'static str),
     /// Dependency rejection, i.e. they blame us
     DependencyRejection(&'static str, String),
-    /// Received a message with no contents
-    MissingMessagePayload,
     /// Received an encrypted message with no decryption params
     MissingCryptoMetadata(&'static str),
     ProtobufDecode(prost::DecodeError),
     Base64Decode(base64::DecodeError),
-    FromUtf8(FromUtf8Error),
-    InvalidResponse(String),
-    ServerError(String),
     KeyCreation(ece::Error),
     Http(reqwest::Error),
     Socket(std::io::Error),
@@ -30,12 +24,6 @@ impl From<reqwest::Error> for Error {
 impl From<ece::Error> for Error {
     fn from(err: ece::Error) -> Error {
         Error::KeyCreation(err)
-    }
-}
-
-impl From<FromUtf8Error> for Error {
-    fn from(err: FromUtf8Error) -> Error {
-        Error::FromUtf8(err)
     }
 }
 
@@ -57,20 +45,16 @@ impl From<std::io::Error> for Error {
     }
 }
 
-impl fmt::Display for Error {
-    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+impl std::fmt::Display for Error {
+    fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
             Self::DependencyFailure(api, problem) => write!(f, "{api} API {problem}"),
             Self::DependencyRejection(api, reason) => {
                 write!(f, "{api} API rejected request: {reason}")
             }
-            Self::MissingMessagePayload => write!(f, "Message payload is missing"),
             Self::MissingCryptoMetadata(kind) => write!(f, "Missing {kind} metadata on message"),
             Error::ProtobufDecode(..) => write!(f, "Error decoding response"),
             Error::Base64Decode(..) => write!(f, "Error decoding base64 string"),
-            Error::FromUtf8(..) => write!(f, "Error getting string from UTF8"),
-            Error::InvalidResponse(url) => write!(f, "Response from call to {} was invalid", url),
-            Error::ServerError(details) => write!(f, "Error from server: {}", details),
             Error::KeyCreation(..) => write!(f, "Creating encryption keys failed"),
             Error::Http(..) => write!(f, "Register HTTP call failed"),
             Error::Socket(..) => write!(f, "TCP socket failed"),
@@ -78,18 +62,14 @@ impl fmt::Display for Error {
     }
 }
 
-impl error::Error for Error {
+impl std::error::Error for Error {
     fn source(&self) -> Option<&(dyn error::Error + 'static)> {
         match *self {
             Self::DependencyFailure(_, _) => None,
             Self::DependencyRejection(_, _) => None,
-            Error::MissingMessagePayload => None,
-            Error::MissingCryptoMetadata(_) => None,
+            Self::MissingCryptoMetadata(_) => None,
             Error::ProtobufDecode(ref e) => Some(e),
             Error::Base64Decode(ref e) => Some(e),
-            Error::FromUtf8(ref e) => Some(e),
-            Error::InvalidResponse(ref _e) => None,
-            Error::ServerError(ref _e) => None,
             Error::KeyCreation(ref e) => Some(e),
             Error::Http(ref e) => Some(e),
             Error::Socket(ref e) => Some(e),
