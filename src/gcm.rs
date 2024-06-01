@@ -207,7 +207,10 @@ impl CheckedSession {
         }
     }
 
-    async fn try_connect(domain: ServerName, login_bytes: &[u8]) -> Result<Connection, Error> {
+    async fn try_connect(
+        domain: ServerName,
+        login_bytes: &[u8],
+    ) -> Result<Connection, tokio::io::Error> {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};
         let stream = tokio::net::TcpStream::connect("mtalk.google.com:5228").await?;
         let tls = new_tls_initiator();
@@ -241,7 +244,9 @@ impl CheckedSession {
             .encode_length_delimited(&mut login_bytes)
             .expect("login request encoding failure");
 
-        Self::try_connect(domain.clone(), &login_bytes).await
+        Self::try_connect(domain.clone(), &login_bytes)
+            .await
+            .map_err(Error::Socket)
     }
 }
 

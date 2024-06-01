@@ -38,7 +38,7 @@ impl Registration {
         const FCM_REGISTRATION_API: &str = "https://fcmregistrations.googleapis.com/v1";
 
         let endpoint = format!("{FCM_API}/send/{gcm_token}");
-        let push_keys = WebPushKeys::new()?;
+        let push_keys = WebPushKeys::new().map_err(|e| Error::Crypto("key creation", e))?;
         let request = RegisterRequest {
             web: WebRegistrationRequest {
                 application_pub_key,

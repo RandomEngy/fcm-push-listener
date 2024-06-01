@@ -104,8 +104,11 @@ impl DataMessage {
 
         // The record size default is 4096 and doesn't seem to be overridden for FCM.
         const RECORD_SIZE: u32 = 4096;
-        let block = AesGcmEncryptedBlock::new(&kex, &salt, RECORD_SIZE, bytes)?;
-        let body = ece::legacy::decrypt_aesgcm(eckey, auth_secret, &block)?;
+        const OPERATION: &str = "message decryption";
+        let block = AesGcmEncryptedBlock::new(&kex, &salt, RECORD_SIZE, bytes)
+            .map_err(|e| Error::Crypto(OPERATION, e))?;
+        let body = ece::legacy::decrypt_aesgcm(eckey, auth_secret, &block)
+            .map_err(|e| Error::Crypto(OPERATION, e))?;
         Ok(Self {
             body,
             persistent_id: message.persistent_id,
@@ -233,7 +236,12 @@ where
                 tokio::pin!(task);
                 match task.poll(cx) {
                     Poll::Pending => return Poll::Pending,
-                    Poll::Ready(Err(e)) => return Poll::Ready(Some(Err(e.into()))),
+                    Poll::Ready(Err(e)) => {
+                        // failfast
+                        self.bytes_required = 0;
+                        self.receive_buffer.clear();
+                        return Poll::Ready(Some(Err(Error::Socket(e))));
+                    }
                     Poll::Ready(Ok(0)) => {
                         // probably a broken pipe, which means whatever incomplete
                         // message we have buffered will just have to be chucked
