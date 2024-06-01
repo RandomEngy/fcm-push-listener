@@ -31,7 +31,11 @@ pub struct Session {
 }
 
 impl Session {
-    async fn request(android_id: Option<i64>, security_token: Option<u64>) -> Result<Self, Error> {
+    async fn request(
+        http: &reqwest::Client,
+        android_id: Option<i64>,
+        security_token: Option<u64>,
+    ) -> Result<Self, Error> {
         use prost::Message;
 
         let request = contract::AndroidCheckinRequest {
@@ -51,21 +55,27 @@ impl Session {
             ..Default::default()
         };
 
-        let response = reqwest::Client::new()
+        const API_NAME: &str = "GCM checkin";
+
+        let response = http
             .post(CHECKIN_URL)
             .body(request.encode_to_vec())
             .header(reqwest::header::CONTENT_TYPE, "application/x-protobuf")
             .send()
-            .await?;
+            .await
+            .map_err(|e| Error::Request(API_NAME, e))?;
 
-        let response_bytes = response.bytes().await?;
+        let response_bytes = response
+            .bytes()
+            .await
+            .map_err(|e| Error::Response(API_NAME, e))?;
         let response = contract::AndroidCheckinResponse::decode(response_bytes)
             .map_err(|e| Error::ProtobufDecode("android checkin response", e))?;
 
         let android_id = require_some(response.android_id, "response is missing android id")?;
 
         const BAD_ID: Result<i64, Error> = Err(Error::DependencyFailure(
-            "GCM checkin",
+            API_NAME,
             "responded with non-numeric android id",
         ));
         let android_id = i64::try_from(android_id).or(BAD_ID)?;
@@ -81,14 +91,16 @@ impl Session {
     }
 
     /// check in to the device registration service, possibly obtaining a new security token
-    pub async fn checkin(&self) -> Result<CheckedSession, Error> {
-        let r = Self::request(Some(self.android_id), Some(self.security_token)).await?;
+    pub async fn checkin(&self, http: &reqwest::Client) -> Result<CheckedSession, Error> {
+        let r = Self::request(http, Some(self.android_id), Some(self.security_token)).await?;
         Ok(CheckedSession(r))
     }
 
     /// check in to the device registration service for the first time
-    pub fn create() -> impl std::future::Future<Output = Result<Self, Error>> {
-        Self::request(None, None)
+    pub fn create<'a>(
+        http: &'a reqwest::Client,
+    ) -> impl std::future::Future<Output = Result<Self, Error>> + 'a {
+        Self::request(http, None, None)
     }
 
     pub async fn request_token(&self, app_id: &str) -> Result<String, Error> {
@@ -104,18 +116,23 @@ impl Session {
         params.insert("device", &android_id);
         params.insert("sender", SERVER_KEY);
 
+        const API_NAME: &str = "GCM registration";
         let result = reqwest::Client::new()
             .post(REGISTER_URL)
             .form(&params)
             .header(reqwest::header::AUTHORIZATION, auth_header)
             .send()
-            .await?;
+            .await
+            .map_err(|e| Error::Request(API_NAME, e))?;
 
-        let response_text = result.text().await?;
-        let mut tokens = response_text.split('=');
+        let response_text = result
+            .text()
+            .await
+            .map_err(|e| Error::Response(API_NAME, e))?;
 
-        const API_NAME: &str = "GCM registration";
         const ERR_EOF: Error = Error::DependencyFailure(API_NAME, "malformed response");
+
+        let mut tokens = response_text.split('=');
         match tokens.next() {
             Some("Error") => {
                 return Err(Error::DependencyRejection(

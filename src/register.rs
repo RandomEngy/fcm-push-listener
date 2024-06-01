@@ -11,13 +11,14 @@ pub struct Registration {
 }
 
 pub async fn register(
+    http: &reqwest::Client,
     firebase_app_id: &str,
     firebase_project_id: &str,
     firebase_api_key: &str,
     vapid_key: Option<&str>,
 ) -> Result<Registration, Error> {
     log::debug!("Checking in to GCM");
-    let gcm_session = gcm::Session::create().await?;
+    let gcm_session = gcm::Session::create(http).await?;
 
     let id = Uuid::new_v4();
     let gcm_app_id = format!("wp:receiver.push.com#{id}");
@@ -27,6 +28,7 @@ pub async fn register(
 
     log::debug!("Getting Firebase installation token");
     let firebase_installation_token = firebase::InstallationAuthToken::request(
+        http,
         firebase_app_id,
         firebase_project_id,
         firebase_api_key,
@@ -35,6 +37,7 @@ pub async fn register(
 
     log::debug!("Calling FCM register");
     let fcm_register_result = fcm::Registration::request(
+        http,
         firebase_project_id,
         firebase_api_key,
         vapid_key,

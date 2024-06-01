@@ -4,7 +4,8 @@ use fcm_push_listener::{MessageStream, Registration, Session as GcmSession, WebP
 async fn run(registration: Registration) -> Result<(), fcm_push_listener::Error> {
     use tokio_stream::StreamExt;
 
-    let session = registration.gcm.checkin().await?;
+    let http = reqwest::Client::new();
+    let session = registration.gcm.checkin(&http).await?;
     let connection = session.new_connection(vec![]).await?;
     let mut stream = MessageStream::wrap(connection, &registration.keys);
 

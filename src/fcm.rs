@@ -27,13 +27,17 @@ pub struct Registration {
 
 impl Registration {
     pub async fn request(
+        http: &reqwest::Client,
         project_id: &str,
         api_key: &str,
         application_pub_key: Option<&str>,
         firebase_installation_auth_token: &str,
         gcm_token: &str,
     ) -> Result<Self, Error> {
-        let endpoint = format!("https://fcm.googleapis.com/fcm/send/{gcm_token}");
+        const FCM_API: &str = "https://fcm.googleapis.com/fcm";
+        const FCM_REGISTRATION_API: &str = "https://fcmregistrations.googleapis.com/v1";
+
+        let endpoint = format!("{FCM_API}/send/{gcm_token}");
         let push_keys = WebPushKeys::new()?;
         let request = RegisterRequest {
             web: WebRegistrationRequest {
@@ -44,22 +48,25 @@ impl Registration {
             },
         };
 
-        let client = reqwest::Client::new();
-        let url = format!(
-            "https://fcmregistrations.googleapis.com/v1/projects/{project_id}/registrations"
-        );
-        let response = client
+        const API_NAME: &str = "FCM Registration";
+        const API_KEY_HEADER: &str = "x-goog-api-key";
+        const AUTH_HEADER: &str = "x-goog-firebase-installations-auth";
+
+        let url = format!("{FCM_REGISTRATION_API}/projects/{project_id}/registrations");
+        let response = http
             .post(url)
             .json(&request)
-            .header("x-goog-api-key", api_key)
-            .header(
-                "x-goog-firebase-installations-auth",
-                firebase_installation_auth_token,
-            )
+            .header(API_KEY_HEADER, api_key)
+            .header(AUTH_HEADER, firebase_installation_auth_token)
             .send()
-            .await?;
+            .await
+            .map_err(|e| Error::Request(API_NAME, e))?;
 
-        let response: RegisterResponse = response.json().await?;
+        let response: RegisterResponse = response
+            .json()
+            .await
+            .map_err(|e| Error::Response(API_NAME, e))?;
+
         Ok(Self {
             fcm_token: response.token,
             keys: push_keys,

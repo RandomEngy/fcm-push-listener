@@ -31,6 +31,7 @@ pub struct InstallationAuthToken {
 
 impl InstallationAuthToken {
     pub async fn request(
+        http: &reqwest::Client,
         application_id: &str,
         project_id: &str,
         api_key: &str,
@@ -50,16 +51,20 @@ impl InstallationAuthToken {
         let heartbeat_json = "{\"heartbeats\": [], \"version\": 2}";
         let heartbeat_header_value = Base64.encode(heartbeat_json.as_bytes());
 
-        let client = reqwest::Client::new();
-        let response = client
+        const API: &str = "Firebase installation";
+
+        let response = http
             .post(format!("{INSTALL_API}/projects/{project_id}/installations"))
             .json(&request)
             .header("x-firebase-client", heartbeat_header_value)
             .header("x-goog-api-key", api_key)
             .send()
-            .await?;
+            .await
+            .map_err(|e| Error::Request(API, e))?;
 
-        let response: InstallationResponse = response.json().await?;
+        let response: InstallationResponse =
+            response.json().await.map_err(|e| Error::Response(API, e))?;
+
         Ok(response.auth_token)
     }
 }

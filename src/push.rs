@@ -74,14 +74,20 @@ impl DataMessage {
             match field.key.as_str() {
                 "crypto-key" => {
                     // crypto_key format: dh=abc...
-                    kex = URL_SAFE.decode(&field.value[3..])?;
+                    kex = URL_SAFE
+                        .decode(&field.value[3..])
+                        .map_err(|e| Error::Base64Decode("FCM message crypto-key", e))?;
+
                     if !salt.is_empty() {
                         break;
                     }
                 }
                 "encryption" => {
                     // encryption format: salt=abc...
-                    salt = URL_SAFE.decode(&field.value[5..])?;
+                    salt = URL_SAFE
+                        .decode(&field.value[5..])
+                        .map_err(|e| Error::Base64Decode("FCM message encryption params", e))?;
+
                     if !kex.is_empty() {
                         break;
                     }
