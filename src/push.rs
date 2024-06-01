@@ -57,7 +57,9 @@ impl DataMessage {
         use ece::legacy::AesGcmEncryptedBlock;
         use prost::Message;
 
-        let message = crate::mcs::DataMessageStanza::decode(bytes)?;
+        let message = crate::mcs::DataMessageStanza::decode(bytes)
+            .map_err(|e| Error::ProtobufDecode("FCM data message", e))?;
+
         let bytes = match message.raw_data {
             Some(v) => v,
             None => {

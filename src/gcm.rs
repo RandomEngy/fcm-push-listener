@@ -59,7 +59,8 @@ impl Session {
             .await?;
 
         let response_bytes = response.bytes().await?;
-        let response = contract::AndroidCheckinResponse::decode(response_bytes)?;
+        let response = contract::AndroidCheckinResponse::decode(response_bytes)
+            .map_err(|e| Error::ProtobufDecode("android checkin response", e))?;
 
         let android_id = require_some(response.android_id, "response is missing android id")?;
 

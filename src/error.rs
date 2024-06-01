@@ -8,7 +8,8 @@ pub enum Error {
     DependencyRejection(&'static str, String),
     /// Received an encrypted message with no decryption params
     MissingCryptoMetadata(&'static str),
-    ProtobufDecode(prost::DecodeError),
+    /// Protobuf deserialization failure, probably a contract change
+    ProtobufDecode(&'static str, prost::DecodeError),
     Base64Decode(base64::DecodeError),
     KeyCreation(ece::Error),
     Http(reqwest::Error),
@@ -24,12 +25,6 @@ impl From<reqwest::Error> for Error {
 impl From<ece::Error> for Error {
     fn from(err: ece::Error) -> Error {
         Error::KeyCreation(err)
-    }
-}
-
-impl From<prost::DecodeError> for Error {
-    fn from(err: prost::DecodeError) -> Error {
-        Error::ProtobufDecode(err)
     }
 }
 
@@ -53,7 +48,7 @@ impl std::fmt::Display for Error {
                 write!(f, "{api} API rejected request: {reason}")
             }
             Self::MissingCryptoMetadata(kind) => write!(f, "Missing {kind} metadata on message"),
-            Error::ProtobufDecode(..) => write!(f, "Error decoding response"),
+            Error::ProtobufDecode(kind, _) => write!(f, "Error decoding {kind}"),
             Error::Base64Decode(..) => write!(f, "Error decoding base64 string"),
             Error::KeyCreation(..) => write!(f, "Creating encryption keys failed"),
             Error::Http(..) => write!(f, "Register HTTP call failed"),
@@ -68,7 +63,7 @@ impl std::error::Error for Error {
             Self::DependencyFailure(_, _) => None,
             Self::DependencyRejection(_, _) => None,
             Self::MissingCryptoMetadata(_) => None,
-            Error::ProtobufDecode(ref e) => Some(e),
+            Error::ProtobufDecode(_, ref e) => Some(e),
             Error::Base64Decode(ref e) => Some(e),
             Error::KeyCreation(ref e) => Some(e),
             Error::Http(ref e) => Some(e),
