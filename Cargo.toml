@@ -17,7 +17,7 @@ log = "0.4.17"
 pin-project-lite = "0.2.14"
 prost = "0.11.6"
 rand = "0.8.5"
-reqwest = { version = "0.11.14", features = ["json"] }
+reqwest = { version = "0.12.4", features = ["json"] }
 serde = "1.0.152"
 serde_with = "2.3.0"
 tokio = { version = "1.25.0", features = ["macros", "rt-multi-thread", "net"] }
