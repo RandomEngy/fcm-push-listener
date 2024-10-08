@@ -111,15 +111,15 @@ struct RegisterResponse {
 #[derive(Clone, Serialize, Deserialize)]
 pub struct WebPushKeys {
     /// Public key with URL safe base64 encoding, no padding
-    #[serde(deserialize_with = "from_base64")]
+    #[serde(deserialize_with = "from_base64", serialize_with = "to_base64")]
     pub public_key: Vec<u8>,
 
     /// Private key with URL safe base64 encoding, no padding
-    #[serde(deserialize_with = "from_base64")]
+    #[serde(deserialize_with = "from_base64", serialize_with = "to_base64")]
     pub private_key: Vec<u8>,
 
     /// Generated random auth secret, with URL safe base64 encoding, no padding
-    #[serde(deserialize_with = "from_base64")]
+    #[serde(deserialize_with = "from_base64", serialize_with = "to_base64")]
     pub auth_secret: Vec<u8>,
 }
 
