@@ -1,112 +1,275 @@
-use prost::Message;
-use std::collections::HashMap;
-use reqwest::header::AUTHORIZATION;
-
-use crate::Error;
-
-pub mod checkin {
+pub mod contract {
     include!(concat!(env!("OUT_DIR"), "/checkin_proto.rs"));
 }
 
-pub struct CheckInResult {
+use crate::Error;
+use prost::bytes::BufMut;
+use serde::{Deserialize, Serialize};
+use serde_with::serde_as;
+use tokio_rustls::rustls::ServerName;
+
+fn require_some<T>(value: Option<T>, reason: &'static str) -> Result<T, Error> {
+    match value {
+        Some(value) => Ok(value),
+        None => Err(Error::DependencyFailure("Android device check-in", reason)),
+    }
+}
+
+const CHECKIN_URL: &str = "https://android.clients.google.com/checkin";
+const REGISTER_URL: &str = "https://android.clients.google.com/c2dm/register3";
+
+// Normal JSON serialization will lose precision and change the number, so we must
+// force the i64/u64 to serialize to string.
+#[serde_as]
+#[derive(Clone, Serialize, Deserialize)]
+pub struct Session {
+    #[serde_as(as = "serde_with::DisplayFromStr")]
     pub android_id: i64,
+
+    #[serde_as(as = "serde_with::DisplayFromStr")]
     pub security_token: u64,
 }
 
-/// Server key in URL-safe base64
-const SERVER_KEY: &str = "BDOU99-h67HcA6JeFXHbSNMu7e2yNNu3RzoMj8TM4W88jITfq7ZmPvIM1Iv-4_l2LxQcYwhqby2xGpWwzjfAnG4";
+impl Session {
+    async fn request(
+        http: &reqwest::Client,
+        android_id: Option<i64>,
+        security_token: Option<u64>,
+    ) -> Result<Self, Error> {
+        use prost::Message;
 
-pub async fn check_in(android_id: Option<i64>, security_token: Option<u64>) -> Result<CheckInResult, Error> {
-    // Build up the request object
-    let mut chrome_build = checkin::ChromeBuildProto::default();
-    chrome_build.platform = Some(2);
-    chrome_build.chrome_version = Some(String::from("63.0.3234.0"));
-    chrome_build.channel = Some(1);
+        let request = contract::AndroidCheckinRequest {
+            version: Some(3),
+            id: android_id,
+            security_token,
+            user_serial_number: Some(0),
+            checkin: contract::AndroidCheckinProto {
+                r#type: Some(3),
+                chrome_build: Some(contract::ChromeBuildProto {
+                    platform: Some(2),
+                    channel: Some(1),
+                    chrome_version: Some(String::from("63.0.3234.0")),
+                }),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
 
-    let mut checkin_object = checkin::AndroidCheckinProto::default();
-    checkin_object.r#type = Some(3);
-    checkin_object.chrome_build = Some(chrome_build);
+        const API_NAME: &str = "GCM checkin";
 
-    let mut request = checkin::AndroidCheckinRequest::default();
-    request.user_serial_number = Some(0);
-    request.checkin = checkin_object;
-    request.version = Some(3);
-    request.id = android_id;
-    request.security_token = security_token;
+        let response = http
+            .post(CHECKIN_URL)
+            .body(request.encode_to_vec())
+            .header(reqwest::header::CONTENT_TYPE, "application/x-protobuf")
+            .send()
+            .await
+            .map_err(|e| Error::Request(API_NAME, e))?;
 
-    // Serialize via protobuf
-    let buf = serialize_checkin_request(&request);
+        let response_bytes = response
+            .bytes()
+            .await
+            .map_err(|e| Error::Response(API_NAME, e))?;
+        let response = contract::AndroidCheckinResponse::decode(response_bytes)
+            .map_err(|e| Error::ProtobufDecode("android checkin response", e))?;
 
-    // Send HTTP request
-    let url = "https://android.clients.google.com/checkin";
-    let client = reqwest::Client::new();
-    let result = client.post(url)
-        .body(buf)
-        .header(reqwest::header::CONTENT_TYPE, "application/x-protobuf")
-        .send()
-        .await?;
+        let android_id = require_some(response.android_id, "response is missing android id")?;
 
-    let response_bytes = result.bytes().await?;
-    
-    // Deserialize via protobuf
-    let response_object = checkin::AndroidCheckinResponse::decode(response_bytes)?;
+        const BAD_ID: Result<i64, Error> = Err(Error::DependencyFailure(
+            API_NAME,
+            "responded with non-numeric android id",
+        ));
+        let android_id = i64::try_from(android_id).or(BAD_ID)?;
+        let security_token = require_some(
+            response.security_token,
+            "response is missing security token",
+        )?;
 
-    // Make sure we got the security token and Android ID on the response.
-    let raw_android_id = if let Some(id) = response_object.android_id {
-        id
-    } else {
-        return Err(Error::InvalidResponse(String::from(url)))
-    };
-
-    let Ok(sanitized_android_id) = i64::try_from(raw_android_id) else { return Err(Error::InvalidResponse(String::from(url))) };
-
-    let security_token = if let Some(token) = response_object.security_token {
-        token
-    } else {
-        return Err(Error::InvalidResponse(String::from(url)))
-    };
-
-    Ok(CheckInResult { android_id: sanitized_android_id, security_token })
-}
-
-fn serialize_checkin_request(request: &checkin::AndroidCheckinRequest) -> Vec<u8> {
-    let mut buf = Vec::new();
-    buf.reserve(request.encoded_len());
-    // Unwrap is safe, since we have reserved sufficient capacity in the vector.
-    request.encode(&mut buf).unwrap();
-
-    buf
-}
-
-pub async fn register(app_id: &str, android_id: i64, security_token: u64) -> Result<String, Error> {
-    let android_id_string = android_id.to_string();
-
-    let mut params = HashMap::new();
-    params.insert("app", "org.chromium.linux");
-    params.insert("X-subtype", app_id);
-    params.insert("device", &android_id_string);
-    params.insert("sender", SERVER_KEY);
-
-    let url = "https://android.clients.google.com/c2dm/register3";
-
-    let client = reqwest::Client::new();
-    let result = client.post(url)
-        .form(&params)
-        .header(AUTHORIZATION, format!("AidLogin {android_id}:{security_token}"))
-        .send()
-        .await?;
-
-    let response_text = result.text().await?;
-    let response_parts: Vec<&str> = response_text.split("=").collect();
-
-    if response_parts.len() < 2 {
-        return Err(Error::InvalidResponse(String::from(url)))
+        Ok(Self {
+            android_id,
+            security_token,
+        })
     }
 
-    let key = response_parts[0];
-    if key == "Error" {
-        return Err(Error::ServerError(String::from(response_parts[1])))
+    /// check in to the device registration service, possibly obtaining a new security token
+    pub async fn checkin(&self, http: &reqwest::Client) -> Result<CheckedSession, Error> {
+        let r = Self::request(http, Some(self.android_id), Some(self.security_token)).await?;
+        Ok(CheckedSession(r))
     }
 
-    Ok(String::from(response_parts[1]))
+    /// check in to the device registration service for the first time
+    pub fn create<'a>(
+        http: &'a reqwest::Client,
+    ) -> impl std::future::Future<Output = Result<Self, Error>> + 'a {
+        Self::request(http, None, None)
+    }
+
+    pub async fn request_token(&self, app_id: &str) -> Result<String, Error> {
+        /// Server key in URL-safe base64
+        const SERVER_KEY: &str =
+            "BDOU99-h67HcA6JeFXHbSNMu7e2yNNu3RzoMj8TM4W88jITfq7ZmPvIM1Iv-4_l2LxQcYwhqby2xGpWwzjfAnG4";
+
+        let android_id = self.android_id.to_string();
+        let auth_header = format!("AidLogin {}:{}", &android_id, &self.security_token);
+        let mut params = std::collections::HashMap::with_capacity(4);
+        params.insert("app", "org.chromium.linux");
+        params.insert("X-subtype", app_id);
+        params.insert("device", &android_id);
+        params.insert("sender", SERVER_KEY);
+
+        const API_NAME: &str = "GCM registration";
+        let result = reqwest::Client::new()
+            .post(REGISTER_URL)
+            .form(&params)
+            .header(reqwest::header::AUTHORIZATION, auth_header)
+            .send()
+            .await
+            .map_err(|e| Error::Request(API_NAME, e))?;
+
+        let response_text = result
+            .text()
+            .await
+            .map_err(|e| Error::Response(API_NAME, e))?;
+
+        const ERR_EOF: Error = Error::DependencyFailure(API_NAME, "malformed response");
+
+        let mut tokens = response_text.split('=');
+        match tokens.next() {
+            Some("Error") => {
+                return Err(Error::DependencyRejection(
+                    API_NAME,
+                    tokens.next().unwrap_or("no reasons given").into(),
+                ))
+            }
+            None => return Err(ERR_EOF),
+            _ => {}
+        }
+
+        match tokens.next() {
+            Some(v) => Ok(String::from(v)),
+            None => Err(ERR_EOF),
+        }
+    }
+}
+
+fn new_tls_initiator() -> tokio_rustls::TlsConnector {
+    use tokio_rustls::rustls::OwnedTrustAnchor;
+
+    let mut root_store = tokio_rustls::rustls::RootCertStore::empty();
+    let roots = webpki_roots::TLS_SERVER_ROOTS.0.iter().map(|ta| {
+        OwnedTrustAnchor::from_subject_spki_name_constraints(
+            ta.subject,
+            ta.spki,
+            ta.name_constraints,
+        )
+    });
+    root_store.add_server_trust_anchors(roots);
+
+    let config = tokio_rustls::rustls::ClientConfig::builder()
+        .with_safe_defaults()
+        .with_root_certificates(root_store)
+        .with_no_client_auth();
+
+    tokio_rustls::TlsConnector::from(std::sync::Arc::new(config))
+}
+
+pub struct CheckedSession(Session);
+
+impl CheckedSession {
+    const MCS_VERSION: u8 = 41;
+    const LOGIN_REQUEST_TAG: u8 = 2;
+
+    pub fn changed(&self, from: &Session) -> bool {
+        self.0.security_token != from.security_token || self.0.android_id != from.android_id
+    }
+
+    fn new_mcs_login_request(
+        &self,
+        received_persistent_id: Vec<String>,
+    ) -> crate::mcs::LoginRequest {
+        let android_id = self.0.android_id.to_string();
+        crate::mcs::LoginRequest {
+            adaptive_heartbeat: Some(false),
+            auth_service: Some(2),
+            auth_token: self.0.security_token.to_string(),
+            id: "chrome-63.0.3234.0".into(),
+            domain: "mcs.android.com".into(),
+            device_id: Some(format!("android-{:x}", self.0.android_id)),
+            network_type: Some(1),
+            resource: android_id.clone(),
+            user: android_id,
+            use_rmq2: Some(true),
+            setting: vec![crate::mcs::Setting {
+                name: "new_vc".into(),
+                value: "1".into(),
+            }],
+            received_persistent_id,
+            ..Default::default()
+        }
+    }
+
+    async fn try_connect(
+        domain: ServerName,
+        login_bytes: &[u8],
+    ) -> Result<Connection, tokio::io::Error> {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let stream = tokio::net::TcpStream::connect("mtalk.google.com:5228").await?;
+        let tls = new_tls_initiator();
+        let mut stream = tls.connect(domain, stream).await?;
+
+        stream.write_all(login_bytes).await?;
+
+        // Read the version
+        stream.read_i8().await?;
+
+        Ok(Connection(stream))
+    }
+
+    pub async fn new_connection(
+        &self,
+        received_persistent_id: Vec<String>,
+    ) -> Result<Connection, Error> {
+        use prost::Message;
+
+        const ERR_RESOLVE: Error =
+            Error::DependencyFailure("name resolution", "unable to resolve google talk host name");
+
+        let domain = ServerName::try_from("mtalk.google.com").or(Err(ERR_RESOLVE))?;
+
+        let login_request = self.new_mcs_login_request(received_persistent_id);
+
+        let mut login_bytes = bytes::BytesMut::with_capacity(2 + login_request.encoded_len() + 4);
+        login_bytes.put_u8(Self::MCS_VERSION);
+        login_bytes.put_u8(Self::LOGIN_REQUEST_TAG);
+        login_request
+            .encode_length_delimited(&mut login_bytes)
+            .expect("login request encoding failure");
+
+        Self::try_connect(domain.clone(), &login_bytes)
+            .await
+            .map_err(Error::Socket)
+    }
+}
+
+impl std::ops::Deref for CheckedSession {
+    type Target = Session;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+pub struct Connection(pub(crate) tokio_rustls::client::TlsStream<tokio::net::TcpStream>);
+
+impl std::ops::Deref for Connection {
+    type Target = tokio_rustls::client::TlsStream<tokio::net::TcpStream>;
+
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
+}
+
+impl std::ops::DerefMut for Connection {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        &mut self.0
+    }
 }
