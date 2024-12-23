@@ -1,5 +1,6 @@
 pub use fcm_push_listener::Error;
-use fcm_push_listener::{MessageStream, Registration, Session as GcmSession, WebPushKeys};
+use fcm_push_listener::{new_heartbeat_ack, MessageStream, Registration, Session as GcmSession, WebPushKeys};
+use tokio::io::AsyncWriteExt;
 
 async fn run(registration: Registration) -> Result<(), fcm_push_listener::Error> {
     use tokio_stream::StreamExt;
@@ -11,14 +12,18 @@ async fn run(registration: Registration) -> Result<(), fcm_push_listener::Error>
 
     while let Some(message) = stream.next().await {
         match message? {
-            fcm_push_listener::Message::Data(d) => {
-                println!("Message {:?} JSON: {:?}", d.persistent_id, d.body);
+            fcm_push_listener::Message::Data(data) => {
+                println!("Message {:?} Data: {:?}", data.persistent_id, data.body);
             }
             fcm_push_listener::Message::HeartbeatPing => {
-                println!("heartbeat");
+                println!("Heartbeat");
+                let result = stream.write_all(&new_heartbeat_ack()).await;
+                if let Err(e) = result {
+                    println!("Error sending heartbeat ack: {:?}", e);
+                }
             }
             fcm_push_listener::Message::Other(tag, bytes) => {
-                println!("Unrecognized tag: {tag:?}, {bytes:?}");
+                println!("Got non-data message: {tag:?}, {bytes:?}");
             }
         }
     }

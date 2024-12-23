@@ -99,15 +99,6 @@ struct RegisterResponse {
     // web: WebRegistrationResponse,
 }
 
-// #[derive(Deserialize)]
-// #[serde(rename_all = "camelCase")]
-// struct WebRegistrationResponse {
-//     application_pub_key: String,
-//     auth: String,
-//     endpoint: String,
-//     p256dh: String,
-// }
-
 #[derive(Clone, Serialize, Deserialize)]
 pub struct WebPushKeys {
     /// Public key with URL safe base64 encoding, no padding
