@@ -63,8 +63,7 @@ impl DataMessage {
         let bytes = match message.raw_data {
             Some(v) => v,
             None => {
-                const ERR: &str = "sent a data message with no payload";
-                return Err(Error::DependencyFailure("FCM notification", ERR));
+                return Err(Error::EmptyPayload);
             }
         };
 

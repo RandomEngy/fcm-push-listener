@@ -10,6 +10,7 @@ pub enum Error {
     MissingCryptoMetadata(&'static str),
     /// Protobuf deserialization failure, probably a contract change
     ProtobufDecode(&'static str, prost::DecodeError),
+    EmptyPayload,
     Request(&'static str, reqwest::Error),
     Response(&'static str, reqwest::Error),
     Base64Decode(&'static str, base64::DecodeError),
@@ -26,6 +27,7 @@ impl std::fmt::Display for Error {
             }
             Self::MissingCryptoMetadata(kind) => write!(f, "Missing {kind} metadata on message"),
             Self::ProtobufDecode(kind, e) => write!(f, "Error decoding {kind}: {e}"),
+            Self::EmptyPayload => write!(f, "Received a data message with no payload"),
             Self::Base64Decode(kind, e) => write!(f, "Error decoding {kind}: {e}"),
             Self::Request(kind, e) => write!(f, "{kind} API request error: {e}"),
             Self::Response(kind, e) => write!(f, "{kind} API response error: {e}"),
@@ -42,6 +44,7 @@ impl std::error::Error for Error {
             Self::DependencyRejection(_, _) => None,
             Self::MissingCryptoMetadata(_) => None,
             Self::ProtobufDecode(_, ref e) => Some(e),
+            Self::EmptyPayload => None,
             Self::Base64Decode(_, ref e) => Some(e),
             Self::Request(_, ref e) => Some(e),
             Self::Response(_, ref e) => Some(e),
