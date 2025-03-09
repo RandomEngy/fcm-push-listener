@@ -10,23 +10,27 @@ keywords = ["push", "fcm"]
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-base64 = "0.22.1"
-bytes = "1.9.0"
+base64 = "0.22"
+bytes = "1.10"
 ece = "2.3.1"
-log = "0.4.22"
-pin-project-lite = "0.2.14"
-prost = "0.13.4"
-rand = "0.8.5"
-reqwest = { version = "0.12.9", features = ["json"] }
-serde = "1.0.216"
-serde_with = "3.11.0"
-tokio = { version = "1.42.0", features = ["macros", "rt-multi-thread", "net"] }
-tokio-rustls = "0.23.4"
-tokio-stream = "0.1.17"
-webpki-roots = "0.22.6"
+log = "0.4"
+pin-project-lite = "0.2.16"
+prost = "0.13.5"
+rand = "0.9"
+reqwest = { version = "0.12", features = ["json"] }
+serde = "1.0"
+serde_with = "3.12"
+tokio = { version = "1", default-features = false, features = [
+    "macros",
+    "rt-multi-thread",
+    "net",
+] }
+tokio-rustls = "0.26.2"
+tokio-stream = "0.1"
+webpki-roots = "0.26.8"
 
 [dependencies.uuid]
-version = "1.11.0"
+version = "1.15"
 features = [
     "v4",                # Lets you generate random UUIDs
     "fast-rng",          # Use a faster (but still sufficiently random) RNG
@@ -34,4 +38,4 @@ features = [
 ]
 
 [build-dependencies]
-prost-build = "0.13.4"
+prost-build = "0.13.5"
