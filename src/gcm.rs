@@ -6,7 +6,7 @@ use crate::Error;
 use prost::bytes::BufMut;
 use serde::{Deserialize, Serialize};
 use serde_with::serde_as;
-use tokio_rustls::rustls::ServerName;
+use tokio_rustls::rustls::pki_types::ServerName;
 
 fn require_some<T>(value: Option<T>, reason: &'static str) -> Result<T, Error> {
     match value {
@@ -152,20 +152,11 @@ impl Session {
 }
 
 fn new_tls_initiator() -> tokio_rustls::TlsConnector {
-    use tokio_rustls::rustls::OwnedTrustAnchor;
-
-    let mut root_store = tokio_rustls::rustls::RootCertStore::empty();
-    let roots = webpki_roots::TLS_SERVER_ROOTS.0.iter().map(|ta| {
-        OwnedTrustAnchor::from_subject_spki_name_constraints(
-            ta.subject,
-            ta.spki,
-            ta.name_constraints,
-        )
-    });
-    root_store.add_server_trust_anchors(roots);
+    let root_store = tokio_rustls::rustls::RootCertStore {
+        roots: webpki_roots::TLS_SERVER_ROOTS.to_vec(),
+    };
 
     let config = tokio_rustls::rustls::ClientConfig::builder()
-        .with_safe_defaults()
         .with_root_certificates(root_store)
         .with_no_client_auth();
 
@@ -208,7 +199,7 @@ impl CheckedSession {
     }
 
     async fn try_connect(
-        domain: ServerName,
+        domain: ServerName<'static>,
         login_bytes: &[u8],
     ) -> Result<Connection, tokio::io::Error> {
         use tokio::io::{AsyncReadExt, AsyncWriteExt};

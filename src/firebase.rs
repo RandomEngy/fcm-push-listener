@@ -75,7 +75,7 @@ fn generate_fid() -> String {
     use rand::RngCore;
 
     let mut fid: [u8; 17] = [0; 17];
-    rand::thread_rng().fill_bytes(&mut fid);
+    rand::rng().fill_bytes(&mut fid);
     fid[0] = 0b01110000 + (fid[0] % 0b00010000);
     Base64.encode(fid)
 }
