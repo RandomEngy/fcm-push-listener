@@ -391,7 +391,7 @@ checksum = "37909eebbb50d72f9059c3b6d82c0463f2ff062c9e95845c43a6c9c0355411be"
 
 [[package]]
 name = "fcm-push-listener"
-version = "4.0.1"
+version = "4.0.2"
 dependencies = [
  "base64 0.22.1",
  "bytes",
