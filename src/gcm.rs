@@ -221,6 +221,10 @@ impl CheckedSession {
     ) -> Result<Connection, Error> {
         use prost::Message;
 
+        // Install the default crypto provider. If a different one is already registered, this
+        // will do nothing.
+        let _ = rustls::crypto::ring::default_provider().install_default();
+
         const ERR_RESOLVE: Error =
             Error::DependencyFailure("name resolution", "unable to resolve google talk host name");
 
