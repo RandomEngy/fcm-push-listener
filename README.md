@@ -206,4 +206,7 @@ Registration for versions older than 3.0.0 have stopped working as of June 20, 2
 # Build setup
 
 1) Go to https://github.com/protocolbuffers/protobuf/releases , find the latest stable, then extract protoc.exe from protoc-{version}-{platform}.zip and put it in path.
-2) Set up OpenSSL. For Windows, install from https://slproweb.com/products/Win32OpenSSL.html and set the environment variable `OPENSSL_DIR` to `C:\Program Files\OpenSSL-Win64` (or wherever you installed it)
+2) Install CMake from https://cmake.org/download/
+3) Set up OpenSSL. For Windows, install from https://slproweb.com/products/Win32OpenSSL.html and set the environment variable `OPENSSL_DIR` to `C:\Program Files\OpenSSL-Win64` (or wherever you installed it)
+
+// If you encounter ``could not find native static library `libssl`, perhaps an -L flag is missing`` or a similar compilation error - try to set the environment variable `OPENSSL_LIB_DIR` to `C:\Program Files\OpenSSL-Win64\lib\VC\x64\MD`
