@@ -50,10 +50,35 @@ pub struct DataMessage {
     pub persistent_id: Option<String>,
 }
 
+/// Finds a parameter in a Crypto-Key or Encryption header value.
+///
+/// Values look like `dh=BASE64` but may carry additional parameters, e.g.
+/// `dh=BASE64;p256ecdsa=BASE64` or `salt=BASE64;rs=4096`. Multiple header
+/// values may also be comma-separated.
+fn header_param<'a>(value: &'a str, name: &str) -> Option<&'a str> {
+    value
+        .split([';', ','])
+        .filter_map(|param| param.split_once('='))
+        .find(|(key, _)| key.trim().eq_ignore_ascii_case(name))
+        .map(|(_, v)| v.trim().trim_matches('"'))
+}
+
+/// URL-safe base64 decode that accepts input with or without padding.
+fn decode_base64_url(value: &str) -> Result<Vec<u8>, base64::DecodeError> {
+    use base64::alphabet::URL_SAFE;
+    use base64::engine::{DecodePaddingMode, GeneralPurpose, GeneralPurposeConfig};
+    use base64::Engine;
+
+    const ENGINE: GeneralPurpose = GeneralPurpose::new(
+        &URL_SAFE,
+        GeneralPurposeConfig::new().with_decode_padding_mode(DecodePaddingMode::Indifferent),
+    );
+
+    ENGINE.decode(value)
+}
+
 impl DataMessage {
     fn decode(eckey: &EcKeyComponents, auth_secret: &[u8], bytes: &[u8]) -> Result<Self, Error> {
-        use base64::engine::general_purpose::URL_SAFE;
-        use base64::Engine;
         use ece::legacy::AesGcmEncryptedBlock;
         use prost::Message;
 
@@ -72,23 +97,15 @@ impl DataMessage {
         for field in message.app_data {
             match field.key.as_str() {
                 "crypto-key" => {
-                    // crypto_key format: dh=abc...
-                    kex = URL_SAFE
-                        .decode(&field.value[3..])
-                        .map_err(|e| Error::Base64Decode("FCM message crypto-key", e))?;
-
-                    if !salt.is_empty() {
-                        break;
+                    if let Some(dh) = header_param(&field.value, "dh") {
+                        kex = decode_base64_url(dh)
+                            .map_err(|e| Error::Base64Decode("FCM message crypto-key", e))?;
                     }
                 }
                 "encryption" => {
-                    // encryption format: salt=abc...
-                    salt = URL_SAFE
-                        .decode(&field.value[5..])
-                        .map_err(|e| Error::Base64Decode("FCM message encryption params", e))?;
-
-                    if !kex.is_empty() {
-                        break;
+                    if let Some(s) = header_param(&field.value, "salt") {
+                        salt = decode_base64_url(s)
+                            .map_err(|e| Error::Base64Decode("FCM message encryption params", e))?;
                     }
                 }
                 _ => {}
@@ -283,4 +300,101 @@ pub fn new_heartbeat_ack() -> BytesMut {
         .expect("heartbeat ack serialization should succeed");
 
     bytes
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn header_param_handles_extra_params() {
+        assert_eq!(header_param("dh=abc", "dh"), Some("abc"));
+        assert_eq!(header_param("dh=abc;p256ecdsa=def", "dh"), Some("abc"));
+        assert_eq!(
+            header_param("dh=abc; p256ecdsa=def", "p256ecdsa"),
+            Some("def")
+        );
+        assert_eq!(header_param("p256ecdsa=def;dh=abc", "dh"), Some("abc"));
+        assert_eq!(header_param("keyid=p256dh, dh=\"abc\"", "dh"), Some("abc"));
+        assert_eq!(header_param("salt=xyz;rs=4096", "rs"), Some("4096"));
+        assert_eq!(header_param("p256ecdsa=def", "dh"), None);
+        assert_eq!(header_param("", "dh"), None);
+    }
+
+    #[test]
+    fn decode_base64_url_accepts_padded_and_unpadded() {
+        assert_eq!(decode_base64_url("YWI=").unwrap(), b"ab");
+        assert_eq!(decode_base64_url("YWI").unwrap(), b"ab");
+        assert_eq!(decode_base64_url("_-8").unwrap(), [0xff, 0xef]);
+    }
+
+    /// Encrypts a message and wraps it in a `DataMessageStanza` the way FCM delivers it.
+    /// The headers are produced by `ece` and then passed through `rewrite_headers`.
+    fn encrypt_message(
+        vapid_key: Option<&[u8]>,
+        rewrite_headers: impl FnOnce(String, String) -> (String, String),
+    ) -> (EcKeyComponents, [u8; 16], Vec<u8>) {
+        use base64::engine::general_purpose::URL_SAFE_NO_PAD;
+        use base64::Engine;
+        use prost::Message;
+
+        let (keypair, auth_secret) = ece::generate_keypair_and_auth_secret().unwrap();
+        let components = keypair.raw_components().unwrap();
+        let block =
+            ece::legacy::encrypt_aesgcm(&keypair.pub_as_raw().unwrap(), &auth_secret, b"hello")
+                .unwrap();
+
+        let headers = block.headers(vapid_key);
+        let header = |name: &str| {
+            headers
+                .iter()
+                .find(|(k, _)| *k == name)
+                .map(|(_, v)| v.clone())
+                .unwrap()
+        };
+        let (crypto_key, encryption) = rewrite_headers(header("Crypto-Key"), header("Encryption"));
+
+        let stanza = crate::mcs::DataMessageStanza {
+            app_data: vec![
+                crate::mcs::AppData {
+                    key: "crypto-key".into(),
+                    value: crypto_key,
+                },
+                crate::mcs::AppData {
+                    key: "encryption".into(),
+                    value: encryption,
+                },
+            ],
+            persistent_id: Some("0:123".into()),
+            raw_data: Some(URL_SAFE_NO_PAD.decode(block.body()).unwrap()),
+            ..Default::default()
+        };
+
+        (components, auth_secret, stanza.encode_to_vec())
+    }
+
+    #[test]
+    fn decodes_vapid_style_crypto_key() {
+        let (eckey, auth_secret, bytes) = encrypt_message(Some(&[4u8; 65]), |c, e| (c, e));
+
+        let message = DataMessage::decode(&eckey, &auth_secret, &bytes).unwrap();
+        assert_eq!(message.body, b"hello");
+        assert_eq!(message.persistent_id.as_deref(), Some("0:123"));
+    }
+
+    #[test]
+    fn decodes_padded_crypto_key() {
+        use base64::engine::general_purpose::{URL_SAFE, URL_SAFE_NO_PAD};
+        use base64::Engine;
+
+        let repad = |value: &str| URL_SAFE.encode(URL_SAFE_NO_PAD.decode(value).unwrap());
+        let (eckey, auth_secret, bytes) = encrypt_message(None, |c, e| {
+            let dh = header_param(&c, "dh").unwrap();
+            let salt = header_param(&e, "salt").unwrap();
+            (format!("dh={}", repad(dh)), format!("salt={}", repad(salt)))
+        });
+
+        let message = DataMessage::decode(&eckey, &auth_secret, &bytes).unwrap();
+        assert_eq!(message.body, b"hello");
+    }
 }
